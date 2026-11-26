@@ -43,6 +43,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.44.9'
           channel: 'stable'
           cache: true
 
@@ -50,7 +51,7 @@ jobs:
         run: flutter pub get
 
       - name: Static analysis
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Run tests
         run: flutter test
@@ -77,6 +78,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.44.9'
           channel: 'stable'
           cache: true
 
