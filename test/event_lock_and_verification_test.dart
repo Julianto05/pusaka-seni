@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pusaka_seni_v2/models/scoring_models.dart';
 import 'package:pusaka_seni_v2/services/gelanggang_sync_service.dart';
 import 'package:pusaka_seni_v2/services/pusaka_seni_api_service.dart';
 import 'package:pusaka_seni_v2/views/dewan/dewan_panel_view.dart';
@@ -11,10 +12,12 @@ void main() {
   group('Event Lock & Post-Verification Display Tests', () {
     setUp(() {
       GelanggangSyncService.instance.resetVerification();
+      PusakaSeniApiService.testVerifierOverride = null;
     });
 
     tearDown(() {
       GelanggangSyncService.instance.resetVerification();
+      PusakaSeniApiService.testVerifierOverride = null;
     });
 
     testWidgets(
@@ -198,6 +201,138 @@ void main() {
         expect(filtered.first.poolDocId, 'pool-a');
         expect(filtered.first.eventDocId, 'ev-abata');
         expect(filtered.first.gelanggangDocId, 'gel-1');
+      },
+    );
+
+    testWidgets(
+      'Rejects arbitrary arena codes and unlinked codes, only accepts event-admin created codes',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        // Simulate Strapi backend where only '23456789' is created by Event Admin
+        // ('12345678' has event: null, and any other code does not exist).
+        PusakaSeniApiService.testVerifierOverride = (code) async {
+          if (code == '23456789') {
+            return const GelanggangVerificationResult(
+              status: GelanggangVerificationStatus.valid,
+              info: VerifiedGelanggangInfo(
+                gelanggangId: '717',
+                gelanggangDocId: 'ixsc01579srddp0ydojtreq3',
+                rawArenaCode: '23456789',
+                arenaLabel: 'GELANGGANG 1 (23456789)',
+                eventId: '6',
+                eventDocId: 'l94u7vb17hfhrj11y6culgbg',
+                eventTitle: 'ABATA CAMPIO',
+                eventCode: 'ABT-87645',
+                jumlahJuri: 4,
+              ),
+              message: 'Kode gelanggang terverifikasi.',
+            );
+          }
+          if (code == '12345678') {
+            return const GelanggangVerificationResult(
+              status: GelanggangVerificationStatus.noEventLinked,
+              message:
+                  'Kode gelanggang "12345678" belum terhubung ke Event aktif. Hubungi Admin Event.',
+            );
+          }
+          return GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.notFound,
+            message:
+                'Kode gelanggang "$code" tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.',
+          );
+        };
+
+        String? verifiedArena;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GelanggangVerificationView(
+              roleName: 'Dewan Pertandingan',
+              roleIcon: Icons.shield_rounded,
+              accentColor: const Color(0xFFDC2626),
+              enableAnimation: false,
+              onVerified: (arena) => verifiedArena = arena,
+              onBack: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Arbitrary 8-digit code must be REJECTED
+        await tester.enterText(find.byType(TextField), '99999999');
+        await tester.pumpAndSettle();
+
+        expect(verifiedArena, isNull);
+        expect(GelanggangSyncService.instance.isGelanggangVerified, isFalse);
+        expect(
+          find.textContaining('tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.'),
+          findsWidgets,
+        );
+
+        // 2. Orphan code without linked Event must also be REJECTED
+        await tester.enterText(find.byType(TextField), '12345678');
+        await tester.pumpAndSettle();
+
+        expect(verifiedArena, isNull);
+        expect(GelanggangSyncService.instance.isGelanggangVerified, isFalse);
+        expect(
+          find.textContaining('belum terhubung ke Event aktif'),
+          findsWidgets,
+        );
+
+        // 3. Valid Event-Admin created code must be ACCEPTED and lock Event metadata
+        await tester.enterText(find.byType(TextField), '23456789');
+        await tester.pumpAndSettle();
+
+        expect(verifiedArena, 'GELANGGANG 1 (23456789)');
+        expect(GelanggangSyncService.instance.isGelanggangVerified, isTrue);
+        expect(GelanggangSyncService.instance.lockedEventId, '6');
+        expect(GelanggangSyncService.instance.lockedEventTitle, 'ABATA CAMPIO');
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Rejects verification when server cannot be reached (no offline arbitrary bypass)',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        PusakaSeniApiService.testVerifierOverride = (_) async {
+          return const GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.networkError,
+            message:
+                'Gagal terhubung ke server untuk memverifikasi kode gelanggang. Periksa koneksi internet Anda.',
+          );
+        };
+
+        String? verifiedArena;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GelanggangVerificationView(
+              roleName: 'Time Keeper',
+              roleIcon: Icons.timer_rounded,
+              accentColor: const Color(0xFF14B8A6),
+              enableAnimation: false,
+              onVerified: (arena) => verifiedArena = arena,
+              onBack: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), '23456789');
+        await tester.pumpAndSettle();
+
+        expect(verifiedArena, isNull);
+        expect(GelanggangSyncService.instance.isGelanggangVerified, isFalse);
+        expect(find.textContaining('Gagal terhubung ke server'), findsWidgets);
+        expect(tester.takeException(), isNull);
       },
     );
   });

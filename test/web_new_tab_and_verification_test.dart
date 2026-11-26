@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pusaka_seni_v2/main.dart';
+import 'package:pusaka_seni_v2/models/scoring_models.dart';
 import 'package:pusaka_seni_v2/services/app_link_helper.dart';
 import 'package:pusaka_seni_v2/services/gelanggang_sync_service.dart';
+import 'package:pusaka_seni_v2/services/pusaka_seni_api_service.dart';
 import 'package:pusaka_seni_v2/views/monitoring/monitoring_scoreboard_view.dart';
 import 'package:pusaka_seni_v2/views/portal/gelanggang_verification_view.dart';
 import 'package:pusaka_seni_v2/views/portal/scoring_portal_view.dart';
@@ -12,10 +14,12 @@ void main() {
   group('Web/Windows Verification & Open Link in New Tab Tests', () {
     setUp(() {
       GelanggangSyncService.instance.resetVerification();
+      PusakaSeniApiService.testVerifierOverride = null;
     });
 
     tearDown(() {
       GelanggangSyncService.instance.resetVerification();
+      PusakaSeniApiService.testVerifierOverride = null;
     });
 
     test('AppLinkHelper builds and parses hash-fragment deep links cleanly', () {
@@ -120,12 +124,37 @@ void main() {
     );
 
     testWidgets(
-      'GelanggangVerificationView verifies code cleanly via explicit Verifikasi button',
+      'GelanggangVerificationView rejects arbitrary code and verifies admin-created code via explicit Verifikasi button',
       (WidgetTester tester) async {
         tester.view.physicalSize = const Size(1280, 800);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
+
+        PusakaSeniApiService.testVerifierOverride = (code) async {
+          if (code == '234567') {
+            return const GelanggangVerificationResult(
+              status: GelanggangVerificationStatus.valid,
+              info: VerifiedGelanggangInfo(
+                gelanggangId: '717',
+                gelanggangDocId: 'gel-1',
+                rawArenaCode: '234567',
+                arenaLabel: 'GELANGGANG 1 (234567)',
+                eventId: '6',
+                eventDocId: 'ev-6',
+                eventTitle: 'ABATA CAMPIO',
+                eventCode: 'ABT-87645',
+                jumlahJuri: 4,
+              ),
+              message: 'Kode gelanggang terverifikasi.',
+            );
+          }
+          return GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.notFound,
+            message:
+                'Kode gelanggang "$code" tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.',
+          );
+        };
 
         String? verifiedArena;
         await tester.pumpWidget(
@@ -142,16 +171,61 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Enter a partial/custom arena code and tap explicit verify button
-        await tester.enterText(find.byType(TextField), '234567');
+        // 1. Arbitrary/random code is rejected even when tapping explicit verify button
+        await tester.enterText(find.byType(TextField), '999999');
         await tester.pumpAndSettle();
 
         final verifyBtn = find.text('Verifikasi Kode Gelanggang');
         expect(verifyBtn, findsOneWidget);
         await tester.tap(verifyBtn);
-        await tester.pumpAndSettle(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
 
-        expect(verifiedArena, 'GELANGGANG 234567');
+        expect(verifiedArena, isNull);
+        expect(
+          find.textContaining('tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.'),
+          findsWidgets,
+        );
+
+        // 2. Valid admin-created code verifies cleanly via explicit Verifikasi button
+        await tester.enterText(find.byType(TextField), '234567');
+        await tester.pumpAndSettle();
+        await tester.tap(verifyBtn);
+        await tester.pumpAndSettle();
+
+        expect(verifiedArena, 'GELANGGANG 1 (234567)');
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Deep link with unregistered arena code is rejected and redirected back to GelanggangVerificationView',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        PusakaSeniApiService.testVerifierOverride = (code) async {
+          return GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.notFound,
+            message:
+                'Kode gelanggang "$code" tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.',
+          );
+        };
+
+        await tester.pumpWidget(
+          PusakaSeniApp(
+            enableAnimation: false,
+            initialUri: Uri.parse(
+              'http://localhost:5000/#/?role=monitoring&arena=99999999',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GelanggangVerificationView), findsOneWidget);
+        expect(find.byType(MonitoringScoreboardView), findsNothing);
+        expect(GelanggangSyncService.instance.isGelanggangVerified, isFalse);
         expect(tester.takeException(), isNull);
       },
     );

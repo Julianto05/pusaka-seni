@@ -128,14 +128,37 @@ class _ScoringHomeScreenState extends State<ScoringHomeScreen> {
     String fallbackCanonical,
   ) async {
     final sync = GelanggangSyncService.instance;
-    if (!sync.cloudSyncEnabled) return;
+    if (!sync.cloudSyncEnabled && !PusakaSeniApiService.hasVerifierOverride) {
+      return;
+    }
     try {
-      final info = await PusakaSeniApiService().verifyGelanggangByCode(rawCode);
-      if (info == null || !mounted) return;
-      final arenaName =
-          (rawCode == '12345678' || rawCode == '87654321')
-              ? fallbackCanonical
-              : info.arenaLabel;
+      final result = await PusakaSeniApiService().verifyGelanggangStrict(rawCode);
+      if (!mounted) return;
+
+      if (!result.isValid) {
+        sync.resetVerification();
+        setState(() {
+          _verifiedArenaCode = null;
+          _currentScreen = ActiveScreen.verification;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          messenger?.removeCurrentSnackBar();
+          messenger?.showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: AppColors.primary,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        });
+        return;
+      }
+
+      final info = result.info!;
+      final arenaName = info.arenaLabel;
       sync.verifyGelanggang(
         arenaCode: arenaName,
         rawArenaCode: info.rawArenaCode.isNotEmpty ? info.rawArenaCode : rawCode,

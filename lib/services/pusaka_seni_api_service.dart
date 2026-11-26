@@ -1,7 +1,30 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:http/http.dart' as http;
 import '../models/scoring_models.dart';
+
+enum GelanggangVerificationStatus {
+  valid,
+  emptyCode,
+  notFound,
+  noEventLinked,
+  networkError,
+}
+
+class GelanggangVerificationResult {
+  final GelanggangVerificationStatus status;
+  final VerifiedGelanggangInfo? info;
+  final String message;
+
+  const GelanggangVerificationResult({
+    required this.status,
+    this.info,
+    required this.message,
+  });
+
+  bool get isValid =>
+      status == GelanggangVerificationStatus.valid && info != null;
+}
 
 class PusakaSeniApiService {
   static const String baseUrl = 'https://beseni-temp.pusakarinjani.my.id';
@@ -9,6 +32,15 @@ class PusakaSeniApiService {
   static const String staticToken =
       'd184ac1ac83b201cafd536675c01356ea36bcbd608ca30a66f62a617887d2561fc8017dd07e98c30cc591690e626a271c3402dbf3d73529e72368522fa1159fbe249d8810975cee031bec033355e6fa258a713b5c1df4d89d02e08454f60ddd33de09f765579aee70784ed6b9aa54e866a1b642304306510dd7e470d93201447';
   static const Duration _timeout = Duration(seconds: 8);
+
+  /// Optional override strictly for automated unit/widget tests to simulate
+  /// backend responses without relying on live network calls.
+  @visibleForTesting
+  static Future<GelanggangVerificationResult> Function(String code)?
+      testVerifierOverride;
+
+  /// Whether a custom verifier override is currently active.
+  static bool get hasVerifierOverride => testVerifierOverride != null;
 
   final http.Client _client = http.Client();
 
@@ -168,41 +200,81 @@ class PusakaSeniApiService {
     return results;
   }
 
-  /// Verifies an 8-digit (or textual) arena code against Strapi `/gelanggangs`
-  /// and returns its linked Event metadata so the app can lock the Event ID.
-  Future<VerifiedGelanggangInfo?> verifyGelanggangByCode(String code) async {
+  /// Strictly verifies an arena code against Strapi `/gelanggangs`.
+  /// Rejects arbitrary/unregistered codes, rejects gelanggangs not linked to
+  /// an Event created by an Admin Event, and rejects when server verification
+  /// cannot be reached.
+  Future<GelanggangVerificationResult> verifyGelanggangStrict(
+    String code,
+  ) async {
     final clean = code.trim();
-    if (clean.isEmpty) return null;
+    if (clean.isEmpty) {
+      return const GelanggangVerificationResult(
+        status: GelanggangVerificationStatus.emptyCode,
+        message: 'Masukkan kode gelanggang terlebih dahulu.',
+      );
+    }
+
+    final override = testVerifierOverride;
+    if (override != null) {
+      return override(clean);
+    }
+
     try {
       final encoded = Uri.encodeQueryComponent(clean);
-      final exact = await _get(
-        '/gelanggangs?filters[arena_code][\$eq]=$encoded&populate[event]=true',
+      final response = await _get(
+        '/gelanggangs?filters[arena_code][\$eqi]=$encoded&populate[event]=true&pagination[pageSize]=10',
       );
-      if (exact is Map &&
-          exact['data'] is List &&
-          (exact['data'] as List).isNotEmpty) {
-        final first = (exact['data'] as List).first;
-        if (first is Map) {
-          return VerifiedGelanggangInfo.fromJson(
-            Map<String, dynamic>.from(first),
+      if (response is Map && response['data'] is List) {
+        final upper = clean.toUpperCase();
+        VerifiedGelanggangInfo? unlinkedMatch;
+        for (final raw in (response['data'] as List)) {
+          if (raw is! Map) continue;
+          final map = Map<String, dynamic>.from(raw);
+          final ac = map['arena_code']?.toString().trim().toUpperCase() ?? '';
+          if (ac != upper) continue;
+          final info = VerifiedGelanggangInfo.fromJson(map);
+          if (info.hasValidEvent) {
+            return GelanggangVerificationResult(
+              status: GelanggangVerificationStatus.valid,
+              info: info,
+              message: 'Kode gelanggang terverifikasi.',
+            );
+          }
+          unlinkedMatch ??= info;
+        }
+        if (unlinkedMatch != null) {
+          return GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.noEventLinked,
+            message:
+                'Kode gelanggang "$clean" belum terhubung ke Event aktif. Hubungi Admin Event.',
           );
         }
+        return GelanggangVerificationResult(
+          status: GelanggangVerificationStatus.notFound,
+          message:
+              'Kode gelanggang "$clean" tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.',
+        );
       }
+      return const GelanggangVerificationResult(
+        status: GelanggangVerificationStatus.networkError,
+        message:
+            'Respon server tidak valid saat memverifikasi kode gelanggang.',
+      );
+    } catch (_) {
+      return const GelanggangVerificationResult(
+        status: GelanggangVerificationStatus.networkError,
+        message:
+            'Gagal terhubung ke server untuk memverifikasi kode gelanggang. Periksa koneksi internet Anda.',
+      );
+    }
+  }
 
-      // Secondary fallback: match against full list (handles case/description match)
-      final all = await fetchGelanggangs();
-      final upper = clean.toUpperCase();
-      for (final g in all) {
-        final ac = g['arena_code']?.toString().trim().toUpperCase() ?? '';
-        final desc = g['description']?.toString().trim().toUpperCase() ?? '';
-        if (ac == upper ||
-            (ac.isNotEmpty && upper.contains(ac)) ||
-            (desc.isNotEmpty && desc == upper)) {
-          return VerifiedGelanggangInfo.fromJson(g);
-        }
-      }
-    } catch (_) {}
-    return null;
+  /// Verifies an arena code strictly against Strapi `/gelanggangs` and returns
+  /// its linked Event metadata only if it exists and is linked to an Event.
+  Future<VerifiedGelanggangInfo?> verifyGelanggangByCode(String code) async {
+    final result = await verifyGelanggangStrict(code);
+    return result.isValid ? result.info : null;
   }
 
   // Fetch Pesertas scoped to the locked Event ID & verified Gelanggang
@@ -298,7 +370,9 @@ class PusakaSeniApiService {
   // Fetch Gelanggangs from live API (including linked event config)
   Future<List<Map<String, dynamic>>> fetchGelanggangs() async {
     try {
-      final json = await _get('/gelanggangs?populate[event]=true');
+      final json = await _get(
+        '/gelanggangs?populate[event]=true&pagination[pageSize]=100',
+      );
       if (json is Map && json['data'] is List) {
         return (json['data'] as List)
             .whereType<Map>()
@@ -306,18 +380,7 @@ class PusakaSeniApiService {
             .toList();
       }
     } catch (_) {}
-    return [
-      {
-        'arena_code': '12345678',
-        'description': 'GELANGGANG A',
-        'gelanggang_status': 'standby',
-      },
-      {
-        'arena_code': '87654321',
-        'description': 'GELANGGANG B',
-        'gelanggang_status': 'standby',
-      },
-    ];
+    return [];
   }
 
   // Fetch Active Event info from live API

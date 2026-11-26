@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import '../../models/scoring_models.dart';
+import '../../services/app_link_helper.dart';
 import '../../services/gelanggang_sync_service.dart';
 import '../../services/platform_env.dart';
 import '../../services/pusaka_seni_api_service.dart';
@@ -38,8 +38,8 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   bool _isCameraActive = false;
   bool _isTorchOn = false;
   bool _isVerifying = false;
+  String? _errorMessage;
   int _activeMethodTab = 0; // 0: Kode 8 Digit, 1: Scan QR (compact screens)
-  List<Map<String, dynamic>> _liveGelanggangs = [];
 
   bool get _isJuriRole => widget.roleName.toLowerCase().contains('juri');
   late int _selectedJuri;
@@ -78,8 +78,6 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     if (widget.enableAnimation) {
       _laserAnimController.repeat(reverse: true);
     }
-
-    _loadLiveGelanggangs();
   }
 
   @override
@@ -104,18 +102,10 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     return GelanggangSyncService.instance.activeArenaCode;
   }
 
-  Future<void> _loadLiveGelanggangs() async {
-    try {
-      final list = await PusakaSeniApiService().fetchGelanggangs();
-      if (mounted) {
-        setState(() => _liveGelanggangs = list);
-      }
-    } catch (_) {}
-  }
-
   void _onKeyPress(String val) {
     if (_pinCode.length < _pinLength) {
       setState(() {
+        _errorMessage = null;
         _pinCode += val;
         _pinController.text = _pinCode;
         _pinController.selection = TextSelection.collapsed(offset: _pinCode.length);
@@ -129,6 +119,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   void _onDelete() {
     if (_pinCode.isNotEmpty) {
       setState(() {
+        _errorMessage = null;
         _pinCode = _pinCode.substring(0, _pinCode.length - 1);
         _pinController.text = _pinCode;
         _pinController.selection = TextSelection.collapsed(offset: _pinCode.length);
@@ -138,6 +129,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
 
   void _onReset() {
     setState(() {
+      _errorMessage = null;
       _pinCode = '';
       _pinController.text = '';
     });
@@ -150,6 +142,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
         final clean = data.text!.replaceAll(RegExp(r'[^0-9A-Za-z]'), '');
         if (clean.isNotEmpty) {
           setState(() {
+            _errorMessage = null;
             _pinCode = clean.length > _pinLength ? clean.substring(0, _pinLength) : clean;
             _pinController.text = _pinCode;
             _pinController.selection = TextSelection.collapsed(offset: _pinCode.length);
@@ -204,91 +197,62 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   }
 
   void _handleScannedBarcode(String code) {
-    final cleanCode = code.replaceAll(RegExp(r'[^0-9A-Za-z\s\-]'), '').trim();
-    final upper = cleanCode.toUpperCase();
-    String? arenaName;
-
-    if (upper == '87654321' ||
-        upper.contains('ARENA-B') ||
-        upper.contains('GELANGGANG B') ||
-        upper.endsWith(' B')) {
-      arenaName = 'GELANGGANG B';
-    } else if (upper == '12345678' ||
-        upper.contains('ARENA-A') ||
-        upper.contains('GELANGGANG A') ||
-        upper.endsWith(' A')) {
-      arenaName = 'GELANGGANG A';
+    final trimmed = code.trim();
+    String extracted = trimmed;
+    final parsedUri = Uri.tryParse(trimmed);
+    if (parsedUri != null && (parsedUri.hasScheme || trimmed.contains('arena='))) {
+      final route = AppLinkHelper.parseStartupRoute(parsedUri);
+      if (route.arenaCode != null && route.arenaCode!.trim().isNotEmpty) {
+        extracted = route.arenaCode!.trim();
+      }
     }
+    final cleanCode = extracted.replaceAll(RegExp(r'[^0-9A-Za-z\-]'), '').trim();
 
     setState(() {
+      _errorMessage = null;
       _pinCode = cleanCode;
       _pinController.text = cleanCode;
       _isCameraActive = false;
     });
     _scannerController?.stop();
 
-    _verifyCode(cleanCode, customArenaName: arenaName);
+    _verifyCode(cleanCode);
   }
 
-  VerifiedGelanggangInfo? _findCachedGelanggang(String cleanCode) {
-    final upper = cleanCode.trim().toUpperCase();
-    for (final g in _liveGelanggangs) {
-      final c = g['arena_code']?.toString().trim().toUpperCase() ?? '';
-      final desc = g['description']?.toString().trim().toUpperCase() ?? '';
-      if ((c.isNotEmpty && (c == upper || upper.contains(c))) ||
-          (desc.isNotEmpty && desc == upper)) {
-        return VerifiedGelanggangInfo.fromJson(g);
-      }
-    }
-    return null;
-  }
-
-  Future<void> _verifyCode(String code, {String? customArenaName}) async {
+  Future<void> _verifyCode(String code) async {
     final clean = code.trim();
     if (_isVerifying || clean.isEmpty) return;
-    setState(() => _isVerifying = true);
+    setState(() {
+      _isVerifying = true;
+      _errorMessage = null;
+    });
 
     try {
       final sync = GelanggangSyncService.instance;
-      final upper = clean.toUpperCase();
 
-      // Lookup live backend metadata to lock Event ID & Gelanggang Document ID
-      VerifiedGelanggangInfo? info = _findCachedGelanggang(clean);
-      if (info == null && sync.cloudSyncEnabled) {
-        try {
-          info = await PusakaSeniApiService().verifyGelanggangByCode(clean);
-        } catch (_) {
-          info = null;
-        }
-      }
+      // Strict backend validation: only arena codes created by Event Admin
+      // (registered in `/gelanggangs` and linked to an active Event) are accepted.
+      final result = await PusakaSeniApiService().verifyGelanggangStrict(clean);
 
       if (!mounted) return;
 
-      String arenaName = customArenaName ?? '';
-      if (arenaName.isEmpty) {
-        if (upper == '12345678' ||
-            upper == 'ARENA-A' ||
-            upper == 'GELANGGANG A' ||
-            upper == 'A') {
-          arenaName = 'GELANGGANG A';
-        } else if (upper == '87654321' ||
-            upper == 'ARENA-B' ||
-            upper == 'GELANGGANG B' ||
-            upper == 'B') {
-          arenaName = 'GELANGGANG B';
-        } else if (info != null) {
-          arenaName = info.arenaLabel;
-        } else {
-          arenaName = upper.startsWith('GELANGGANG') || upper.startsWith('ARENA')
-              ? upper
-              : 'GELANGGANG $upper';
-        }
+      if (!result.isValid) {
+        setState(() => _errorMessage = result.message);
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
       }
 
-      final int? eventJuriCount = info?.jumlahJuri;
-
-      await Future.delayed(const Duration(milliseconds: 250));
-      if (!mounted) return;
+      final info = result.info!;
+      final String arenaName = info.arenaLabel;
+      final int? eventJuriCount = info.jumlahJuri;
 
       // Always pull Dewan's authoritative judge count & Timekeeper's live timer first
       // so non-Dewan devices never overwrite Dewan's activeJuriCount.
@@ -300,10 +264,14 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
       if (_isJuriRole) {
         final available = sync.getAvailableJudgesForThisDevice(arenaCode: arenaName);
         if (available.isEmpty) {
+          final fullMsg = 'Semua nomor juri sudah terisi di $arenaName!';
+          setState(() => _errorMessage = fullMsg);
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Semua nomor juri sudah terisi di $arenaName!'),
+              content: Text(fullMsg),
               backgroundColor: AppColors.primary,
+              behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 3),
             ),
           );
@@ -318,27 +286,27 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
 
       sync.verifyGelanggang(
         arenaCode: arenaName,
-        rawArenaCode: info?.rawArenaCode.isNotEmpty == true
-            ? info!.rawArenaCode
-            : clean,
-        gelanggangId: info?.gelanggangId,
-        gelanggangDocId: info?.gelanggangDocId,
-        eventId: info?.eventId,
-        eventDocId: info?.eventDocId,
-        eventTitle: info?.eventTitle,
-        eventCode: info?.eventCode,
+        rawArenaCode: info.rawArenaCode.isNotEmpty ? info.rawArenaCode : clean,
+        gelanggangId: info.gelanggangId,
+        gelanggangDocId: info.gelanggangDocId,
+        eventId: info.eventId,
+        eventDocId: info.eventDocId,
+        eventTitle: info.eventTitle,
+        eventCode: info.eventCode,
         jumlahJuri: eventJuriCount,
       );
 
-      final eventPrefix = info?.eventTitle != null && info!.eventTitle!.isNotEmpty
+      final eventPrefix = info.eventTitle != null && info.eventTitle!.isNotEmpty
           ? '${info.eventTitle} • '
           : '';
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_isJuriRole
               ? 'Terverifikasi: $eventPrefix$arenaName • Juri $_selectedJuri'
               : 'Terverifikasi: $eventPrefix$arenaName'),
           backgroundColor: AppColors.emerald,
+          behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -346,10 +314,14 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
       widget.onVerified(arenaName);
     } catch (_) {
       if (mounted) {
+        const msg = 'Gagal memverifikasi kode gelanggang. Silakan coba lagi.';
+        setState(() => _errorMessage = msg);
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Gagal memverifikasi kode gelanggang. Silakan coba lagi.'),
+            content: Text(msg),
             backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
             duration: Duration(seconds: 3),
           ),
         );
@@ -688,12 +660,14 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
                         color: hasChar ? AppColors.surface : AppColors.surfaceSoft,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: isCurrent
-                              ? widget.accentColor
-                              : hasChar
-                                  ? AppColors.borderStrong
-                                  : AppColors.border,
-                          width: isCurrent ? 1.8 : 1.0,
+                          color: _errorMessage != null
+                              ? AppColors.primary
+                              : isCurrent
+                                  ? widget.accentColor
+                                  : hasChar
+                                      ? AppColors.borderStrong
+                                      : AppColors.border,
+                          width: (_errorMessage != null || isCurrent) ? 1.8 : 1.0,
                         ),
                         boxShadow: isCurrent
                             ? [
@@ -792,7 +766,10 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
                           contentPadding: EdgeInsets.symmetric(vertical: 8),
                         ),
                         onChanged: (val) {
-                          setState(() => _pinCode = val.trim());
+                          setState(() {
+                            _errorMessage = null;
+                            _pinCode = val.trim();
+                          });
                           if (_pinCode.length >= _pinLength) {
                             _verifyCode(_pinCode);
                           }
@@ -832,6 +809,47 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
               ),
             ),
           ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 340),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: AppColors.primaryBorder),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 1),
+                        child: Icon(
+                          Icons.gpp_bad_rounded,
+                          size: 16,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
 
           // Tactile Soft-Elevated Touch Numeric Keypad

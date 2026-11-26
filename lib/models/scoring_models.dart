@@ -151,6 +151,12 @@ class VerifiedGelanggangInfo {
     this.jumlahJuri,
   });
 
+  /// Returns true only when this Gelanggang is linked to an Event created by
+  /// an Event Admin on the backend.
+  bool get hasValidEvent =>
+      (eventId != null && eventId!.trim().isNotEmpty) ||
+      (eventDocId != null && eventDocId!.trim().isNotEmpty);
+
   factory VerifiedGelanggangInfo.fromJson(Map<String, dynamic> json) {
     final rawCode = json['arena_code']?.toString().trim() ?? '';
     final desc = json['description']?.toString().trim() ?? '';

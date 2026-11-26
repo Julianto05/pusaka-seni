@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pusaka_seni_v2/main.dart';
 import 'package:pusaka_seni_v2/models/scoring_models.dart';
 import 'package:pusaka_seni_v2/services/gelanggang_sync_service.dart';
+import 'package:pusaka_seni_v2/services/pusaka_seni_api_service.dart';
 import 'package:pusaka_seni_v2/views/dewan/dewan_panel_view.dart';
 import 'package:pusaka_seni_v2/views/monitoring/monitoring_scoreboard_view.dart';
 import 'package:pusaka_seni_v2/views/portal/gelanggang_verification_view.dart';
@@ -172,7 +173,33 @@ void main() {
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1.0;
+      PusakaSeniApiService.testVerifierOverride = (code) async {
+        if (code == '23456789') {
+          return const GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.valid,
+            info: VerifiedGelanggangInfo(
+              gelanggangId: '717',
+              gelanggangDocId: 'gel-1',
+              rawArenaCode: '23456789',
+              arenaLabel: 'GELANGGANG 1 (23456789)',
+              eventId: '6',
+              eventDocId: 'ev-6',
+              eventTitle: 'ABATA CAMPIO',
+              eventCode: 'ABT-87645',
+              jumlahJuri: 4,
+            ),
+            message: 'Kode gelanggang terverifikasi.',
+          );
+        }
+        return GelanggangVerificationResult(
+          status: GelanggangVerificationStatus.notFound,
+          message:
+              'Kode gelanggang "$code" tidak ditemukan. Pastikan kode sudah dibuat oleh Admin Event.',
+        );
+      };
       addTearDown(() {
+        PusakaSeniApiService.testVerifierOverride = null;
+        GelanggangSyncService.instance.resetVerification();
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
       });
@@ -187,8 +214,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      // Verify Gelanggang by entering 8-digit code
-      await tester.enterText(find.byType(TextField), '12345678');
+      // Verify Gelanggang by entering valid admin-created 8-digit code
+      await tester.enterText(find.byType(TextField), '23456789');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(ScoringPanelView), findsOneWidget);
 
@@ -209,7 +236,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), '12345678');
+      await tester.enterText(find.byType(TextField), '23456789');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(DewanPanelView), findsOneWidget);
 
@@ -222,7 +249,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), '12345678');
+      await tester.enterText(find.byType(TextField), '23456789');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(TimekeeperPanelView), findsOneWidget);
 
@@ -235,7 +262,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), '12345678');
+      await tester.enterText(find.byType(TextField), '23456789');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(MonitoringScoreboardView), findsOneWidget);
 
