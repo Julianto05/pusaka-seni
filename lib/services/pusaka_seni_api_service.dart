@@ -8,6 +8,7 @@ class PusakaSeniApiService {
       'd184ac1ac83b201cafd536675c01356ea36bcbd608ca30a66f62a617887d2561fc8017dd07e98c30cc591690e626a271c3402dbf3d73529e72368522fa1159fbe249d8810975cee031bec033355e6fa258a713b5c1df4d89d02e08454f60ddd33de09f765579aee70784ed6b9aa54e866a1b642304306510dd7e470d93201447';
 
   final HttpClient _client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 6)
     ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true);
 
   // Singleton instance
@@ -119,5 +120,94 @@ class PusakaSeniApiService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Fetch all live sync records for a specific canonical arena code.
+  Future<List<Map<String, dynamic>>> fetchSyncRecords(String arenaCode) async {
+    try {
+      final prefix = Uri.encodeQueryComponent('sync|$arenaCode|');
+      final json = await _get(
+        '/scores?filters[penilai][\$startsWith]=$prefix&sort=updatedAt:desc,id:desc&pagination[pageSize]=50',
+      );
+      if (json is Map && json['data'] is List) {
+        return (json['data'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Upsert a single sync state record keyed by [syncKey] (stored in `penilai`).
+  /// Returns the Strapi `documentId` if successful, or null on failure.
+  Future<String?> upsertSyncRecord({
+    required String syncKey,
+    required double nilai,
+    required String waktu,
+    required String keterangan,
+    String? existingDocId,
+  }) async {
+    final safeKeterangan =
+        keterangan.length > 255 ? keterangan.substring(0, 255) : keterangan;
+    final payload = jsonEncode({
+      'data': {
+        'penilai': syncKey,
+        'nilai': nilai,
+        'waktu': waktu,
+        'keterangan': safeKeterangan,
+      },
+    });
+
+    try {
+      String? targetDocId = existingDocId;
+      if (targetDocId == null) {
+        final encodedKey = Uri.encodeQueryComponent(syncKey);
+        final existing = await _get(
+          '/scores?filters[penilai][\$eq]=$encodedKey&sort=updatedAt:desc,id:desc&pagination[limit]=1',
+        );
+        if (existing is Map && existing['data'] is List && (existing['data'] as List).isNotEmpty) {
+          final first = (existing['data'] as List).first;
+          if (first is Map) {
+            targetDocId = first['documentId']?.toString();
+          }
+        }
+      }
+
+      if (targetDocId != null && targetDocId.isNotEmpty) {
+        final putUri = Uri.parse('$baseApiUrl/scores/$targetDocId');
+        final putReq = await _client.putUrl(putUri);
+        _applyDefaultHeaders(putReq);
+        putReq.headers.set('Content-Type', 'application/json');
+        putReq.write(payload);
+        final putRes = await putReq.close();
+        final putBody = await putRes.transform(utf8.decoder).join();
+        if (putRes.statusCode >= 200 && putRes.statusCode < 300) {
+          final decoded = jsonDecode(putBody);
+          if (decoded is Map && decoded['data'] is Map) {
+            return decoded['data']['documentId']?.toString() ?? targetDocId;
+          }
+          return targetDocId;
+        }
+        if (putRes.statusCode != 404) {
+          return null;
+        }
+      }
+
+      final postUri = Uri.parse('$baseApiUrl/scores');
+      final postReq = await _client.postUrl(postUri);
+      _applyDefaultHeaders(postReq);
+      postReq.headers.set('Content-Type', 'application/json');
+      postReq.write(payload);
+      final postRes = await postReq.close();
+      final postBody = await postRes.transform(utf8.decoder).join();
+      if (postRes.statusCode >= 200 && postRes.statusCode < 300) {
+        final decoded = jsonDecode(postBody);
+        if (decoded is Map && decoded['data'] is Map) {
+          return decoded['data']['documentId']?.toString();
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 }

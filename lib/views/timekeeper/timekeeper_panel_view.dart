@@ -61,11 +61,13 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
     _category = state.category;
     _syncStateFromService();
     sync.addListener(_handleGelanggangSync);
+    sync.startRealtimeSync(arenaCode: _arenaCode);
   }
 
   @override
   void dispose() {
     GelanggangSyncService.instance.removeListener(_handleGelanggangSync);
+    GelanggangSyncService.instance.stopRealtimeSync(arenaCode: _arenaCode);
     super.dispose();
   }
 

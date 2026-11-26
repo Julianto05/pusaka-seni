@@ -151,12 +151,14 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     _category = state.category;
     _refreshJuriScoresFromSync();
     sync.addListener(_handleGelanggangSync);
+    sync.startRealtimeSync(arenaCode: _arenaCode);
     _loadInitialServerData();
   }
 
   @override
   void dispose() {
     GelanggangSyncService.instance.removeListener(_handleGelanggangSync);
+    GelanggangSyncService.instance.stopRealtimeSync(arenaCode: _arenaCode);
     super.dispose();
   }
 
@@ -176,6 +178,12 @@ class _DewanPanelViewState extends State<DewanPanelView> {
   void _refreshJuriScoresFromSync() {
     final sync = GelanggangSyncService.instance;
     final state = sync.getArenaState(_arenaCode);
+    _athlete = state.athlete;
+    _category = state.category;
+    _isFinalized = state.isMatchFinalized;
+    _penalties
+      ..clear()
+      ..addAll(state.penalties);
     _timeRemaining = state.timerRemainingSeconds;
     _timerStatus = state.timerStatus;
     _timerModeTitle = state.timerModeTitle;

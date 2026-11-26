@@ -43,11 +43,13 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     _arenaCode = widget.arenaCode ?? sync.activeArenaCode;
     _syncFromGelanggangService();
     sync.addListener(_handleGelanggangSync);
+    sync.startRealtimeSync(arenaCode: _arenaCode);
   }
 
   @override
   void dispose() {
     GelanggangSyncService.instance.removeListener(_handleGelanggangSync);
+    GelanggangSyncService.instance.stopRealtimeSync(arenaCode: _arenaCode);
     super.dispose();
   }
 

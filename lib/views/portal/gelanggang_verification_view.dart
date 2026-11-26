@@ -39,6 +39,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   // Juri Device Assignment (Locked per mobile device)
   bool get _isJuriRole => widget.roleName.toLowerCase().contains('juri');
   late int _selectedJuri;
+  late String _syncedArena;
 
   // Controllers for soft keyboard on mobile devices
   late final TextEditingController _pinController;
@@ -54,7 +55,8 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   void initState() {
     super.initState();
     final sync = GelanggangSyncService.instance;
-    final available = sync.getAvailableJudgesForThisDevice();
+    _syncedArena = _currentTargetArena;
+    final available = sync.getAvailableJudgesForThisDevice(arenaCode: _syncedArena);
     if (available.isNotEmpty && !available.contains(sync.selectedJuriNumber)) {
       _selectedJuri = available.first;
       sync.setSelectedJuriNumber(_selectedJuri);
@@ -62,6 +64,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
       _selectedJuri = sync.selectedJuriNumber;
     }
     sync.addListener(_handleGelanggangSync);
+    sync.startRealtimeSync(arenaCode: _syncedArena);
 
     _pinController = TextEditingController(text: _pinCode);
     _pinFocusNode = FocusNode();
@@ -83,6 +86,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   @override
   void dispose() {
     GelanggangSyncService.instance.removeListener(_handleGelanggangSync);
+    GelanggangSyncService.instance.stopRealtimeSync(arenaCode: _syncedArena);
     _pinController.dispose();
     _pinFocusNode.dispose();
     _scannerController?.dispose();
@@ -242,10 +246,13 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
       }
     }
 
-    Timer(const Duration(milliseconds: 300), () {
+    Timer(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
+      final sync = GelanggangSyncService.instance;
       if (_isJuriRole) {
-        final available = GelanggangSyncService.instance.getAvailableJudgesForThisDevice(arenaCode: arenaName);
+        await sync.pullArenaSync(arenaName);
+        if (!mounted) return;
+        final available = sync.getAvailableJudgesForThisDevice(arenaCode: arenaName);
         if (available.isEmpty) {
           setState(() => _isVerifying = false);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -260,10 +267,10 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
         if (!available.contains(_selectedJuri)) {
           _selectedJuri = available.first;
         }
-        GelanggangSyncService.instance.setSelectedJuriNumber(_selectedJuri);
-        GelanggangSyncService.instance.claimJuri(_selectedJuri, arenaCode: arenaName);
+        sync.setSelectedJuriNumber(_selectedJuri);
+        sync.claimJuri(_selectedJuri, arenaCode: arenaName);
       }
-      GelanggangSyncService.instance.verifyGelanggang(arenaCode: arenaName);
+      sync.verifyGelanggang(arenaCode: arenaName);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
