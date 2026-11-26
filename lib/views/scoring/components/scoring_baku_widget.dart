@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../models/scoring_models.dart';
+import '../../../theme/app_theme.dart';
 import 'modals/kemantapan_info_dialog.dart';
 import 'modals/reset_confirm_dialog.dart';
 import 'scoring_baku_tuntas_widget.dart';
@@ -67,54 +68,69 @@ class ScoringBakuWidget extends StatelessWidget {
         ? jurusList[currentJurusIndex]
         : jurusList.last;
     final bool isLastJurus = currentJurusIndex >= totalJurus - 1;
-    final int totalGerakan = jurusList.fold(0, (sum, j) => sum + j.totalGerakan);
+    final int totalGerakan = jurusList.fold(
+      0,
+      (sum, j) => sum + j.totalGerakan,
+    );
 
-    final String groupName = category == SeniCategory.beregu ? 'Seni Beregu' : activeJurus.weaponGroup;
-    final String gerakanSuffix = activeJurus.totalGerakan > 0 ? ' • ${activeJurus.totalGerakan} Gerakan' : '';
-    final String wrongSubtitle = 'Salah di Jurus ${activeJurus.jurusNumber} ($groupName$gerakanSuffix)';
+    final String groupName = category == SeniCategory.beregu
+        ? 'Seni Beregu'
+        : activeJurus.weaponGroup;
+    final String gerakanSuffix = activeJurus.totalGerakan > 0
+        ? ' • ${activeJurus.totalGerakan} Gerakan'
+        : '';
+    final String wrongSubtitle =
+        'Salah di Jurus ${activeJurus.jurusNumber} ($groupName$gerakanSuffix)';
 
     return Column(
       children: [
         // 1. Segmented Visual Progress Bar
         _buildSegmentedProgressBar(totalJurus),
-        const SizedBox(height: 6),
+        const SizedBox(height: 7),
 
         // 1b. Lock Banner if Juri Not Ready
         if (!isJuriReady)
           Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            margin: const EdgeInsets.only(bottom: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF450A0A),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFDC2626)),
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primaryBorder),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.lock_rounded, color: Color(0xFFFCA5A5), size: 14),
+                const Icon(
+                  Icons.lock_rounded,
+                  color: AppColors.primary,
+                  size: 14,
+                ),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'PENILAIAN DIKUNCI: Konfirmasi READY terlebih dahulu untuk mulai menilai',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFFCA5A5),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryText,
                     ),
                   ),
                 ),
                 const SizedBox(width: 6),
                 InkWell(
                   onTap: onRequireReady,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981),
-                      borderRadius: BorderRadius.circular(6),
+                      color: AppColors.emerald,
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
                       'KLIK READY',
@@ -134,7 +150,7 @@ class ScoringBakuWidget extends StatelessWidget {
         Expanded(
           child: Row(
             children: [
-              // Left Button: WRONG & NEXT (Red Gradient)
+              // Left Button: WRONG & NEXT
               Expanded(
                 child: _buildThumbButton(
                   isWrong: true,
@@ -143,37 +159,51 @@ class ScoringBakuWidget extends StatelessWidget {
                   badge: isJuriReady ? '-0.01' : '🔒 Belum Ready',
                   icon: Icons.close_rounded,
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFDC2626), Color(0xFFB91C1C), Color(0xFF991B1B)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFEF4444),
+                      Color(0xFFDC2626),
+                      Color(0xFFB91C1C),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  borderColor: const Color(0xFFF87171),
-                  onTap: isJuriReady ? onWrongAction : (onRequireReady ?? onWrongAction),
+                  borderColor: const Color(0xFFFCA5A5),
+                  onTap: isJuriReady
+                      ? onWrongAction
+                      : (onRequireReady ?? onWrongAction),
                 ),
               ),
               const SizedBox(width: 10),
 
-              // Right Button: NEXT JURUS (Green Gradient)
+              // Right Button: NEXT JURUS
               Expanded(
                 child: _buildThumbButton(
                   isWrong: false,
                   title: 'Next',
                   subtitle: isLastJurus
                       ? (totalGerakan > 0
-                          ? 'Selesaikan Semua $totalJurus Jurus ($totalGerakan Gerakan)'
-                          : 'Selesaikan Semua $totalJurus Jurus')
+                            ? 'Selesaikan Semua $totalJurus Jurus ($totalGerakan Gerakan)'
+                            : 'Selesaikan Semua $totalJurus Jurus')
                       : 'Lanjut ke Jurus Selanjutnya',
                   badge: isJuriReady
                       ? (isLastJurus ? 'Selesai' : 'Jurus Selanjutnya')
                       : '🔒 Belum Ready',
-                  icon: isLastJurus ? Icons.check_circle_rounded : Icons.arrow_forward_rounded,
+                  icon: isLastJurus
+                      ? Icons.check_circle_rounded
+                      : Icons.arrow_forward_rounded,
                   gradient: const LinearGradient(
-                    colors: [Color(0xFF059669), Color(0xFF047857), Color(0xFF065F46)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFF10B981),
+                      Color(0xFF059669),
+                      Color(0xFF047857),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  borderColor: const Color(0xFF34D399),
-                  onTap: isJuriReady ? onNextAction : (onRequireReady ?? onNextAction),
+                  borderColor: const Color(0xFF6EE7B7),
+                  onTap: isJuriReady
+                      ? onNextAction
+                      : (onRequireReady ?? onNextAction),
                 ),
               ),
             ],
@@ -189,17 +219,16 @@ class ScoringBakuWidget extends StatelessWidget {
 
   Widget _buildSegmentedProgressBar(int totalJurus) {
     if (category == SeniCategory.beregu) {
-      // 12 green segments for Beregu
       return Row(
         children: List.generate(12, (index) {
           final isFilled = currentJurusIndex >= index;
           return Expanded(
             child: Container(
-              height: 4,
+              height: 5,
               margin: const EdgeInsets.symmetric(horizontal: 1.5),
               decoration: BoxDecoration(
-                color: isFilled ? const Color(0xFF10B981) : const Color(0xFF334155),
-                borderRadius: BorderRadius.circular(2),
+                color: isFilled ? AppColors.emerald : AppColors.border,
+                borderRadius: BorderRadius.circular(3),
               ),
             ),
           );
@@ -207,27 +236,26 @@ class ScoringBakuWidget extends StatelessWidget {
       );
     }
 
-    // Dynamic segment bars for Tunggal based on weapon groups in jurusList:
-    // Tangan Kosong: amber, Golok: blue, Toya/tongkat: purple
     final List<Map<String, dynamic>> groupSegments = [];
     int startIdx = 0;
     while (startIdx < jurusList.length) {
       final currentGroup = jurusList[startIdx].weaponGroup;
       int endIdx = startIdx;
-      while (endIdx < jurusList.length && jurusList[endIdx].weaponGroup == currentGroup) {
+      while (endIdx < jurusList.length &&
+          jurusList[endIdx].weaponGroup == currentGroup) {
         endIdx++;
       }
       final int count = endIdx - startIdx;
       Color color;
       final lower = currentGroup.toLowerCase();
       if (lower.contains('tangan')) {
-        color = const Color(0xFFF59E0B);
+        color = AppColors.amber;
       } else if (lower.contains('golok')) {
-        color = const Color(0xFF3B82F6);
+        color = AppColors.blue;
       } else if (lower.contains('toya')) {
-        color = const Color(0xFFA855F7);
+        color = AppColors.purple;
       } else {
-        color = const Color(0xFF10B981);
+        color = AppColors.emerald;
       }
 
       double progress;
@@ -236,7 +264,10 @@ class ScoringBakuWidget extends StatelessWidget {
       } else if (currentJurusIndex >= endIdx) {
         progress = 1.0;
       } else {
-        progress = ((currentJurusIndex - startIdx) / count.toDouble()).clamp(0.0, 1.0);
+        progress = ((currentJurusIndex - startIdx) / count.toDouble()).clamp(
+          0.0,
+          1.0,
+        );
       }
 
       groupSegments.add({
@@ -256,10 +287,10 @@ class ScoringBakuWidget extends StatelessWidget {
           Expanded(
             flex: groupSegments[i]['count'] as int,
             child: Container(
-              height: 4.5,
+              height: 5.5,
               decoration: BoxDecoration(
-                color: const Color(0xFF334155),
-                borderRadius: BorderRadius.circular(3),
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(4),
               ),
               child: FractionallySizedBox(
                 alignment: Alignment.centerLeft,
@@ -267,7 +298,7 @@ class ScoringBakuWidget extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: groupSegments[i]['color'] as Color,
-                    borderRadius: BorderRadius.circular(3),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
@@ -289,24 +320,28 @@ class ScoringBakuWidget extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     return InkWell(
-      onTap: onTap, // NO VIBRATION
-      borderRadius: BorderRadius.circular(24),
-      splashColor: Colors.white.withValues(alpha: 0.15),
-      highlightColor: Colors.white.withValues(alpha: 0.08),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(26),
+      splashColor: Colors.white.withValues(alpha: 0.18),
+      highlightColor: Colors.white.withValues(alpha: 0.1),
       child: Container(
         decoration: BoxDecoration(
           gradient: gradient,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: borderColor.withValues(alpha: 0.8), width: 2),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(
+            color: borderColor.withValues(alpha: 0.75),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
-              color: (isWrong ? Colors.red : Colors.green).withValues(alpha: 0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: (isWrong ? AppColors.primary : AppColors.emerald)
+                  .withValues(alpha: 0.24),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isCompact = constraints.maxHeight < 115;
@@ -323,54 +358,51 @@ class ScoringBakuWidget extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: isCompact ? 32 : 44,
-                      height: isCompact ? 32 : 44,
+                      width: isCompact ? 34 : 46,
+                      height: isCompact ? 34 : 46,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: Colors.white.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(icon, color: Colors.white, size: isCompact ? 20 : 26),
+                      child: Icon(
+                        icon,
+                        color: Colors.white,
+                        size: isCompact ? 20 : 26,
+                      ),
                     ),
-                    SizedBox(height: isCompact ? 3 : 6),
+                    SizedBox(height: isCompact ? 4 : 7),
                     Text(
                       title.toUpperCase(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: isCompact ? 14 : 18,
+                        fontSize: isCompact ? 14 : 18.5,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.6,
                         color: Colors.white,
-                        shadows: const [
-                          Shadow(
-                            color: Colors.black38,
-                            blurRadius: 4,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
                       ),
                     ),
-                    SizedBox(height: isCompact ? 1 : 2),
+                    SizedBox(height: isCompact ? 1 : 3),
                     Text(
                       subtitle,
                       textAlign: TextAlign.center,
                       maxLines: isCompact ? 1 : 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: isCompact ? 9.5 : 11,
-                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: isCompact ? 9.5 : 11.5,
+                        color: Colors.white.withValues(alpha: 0.92),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    SizedBox(height: isCompact ? 3 : 6),
+                    SizedBox(height: isCompact ? 4 : 7),
                     Container(
                       padding: EdgeInsets.symmetric(
-                        horizontal: isCompact ? 8 : 10,
-                        vertical: isCompact ? 1.5 : 2.5,
+                        horizontal: isCompact ? 9 : 11,
+                        vertical: isCompact ? 2 : 3,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.black.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color: Colors.white.withValues(alpha: 0.3),
                         ),
@@ -379,7 +411,7 @@ class ScoringBakuWidget extends StatelessWidget {
                         badge,
                         style: TextStyle(
                           fontSize: isCompact ? 9.5 : 10.5,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w800,
                           color: Colors.white,
                           fontFamily: 'monospace',
                         ),
@@ -397,16 +429,15 @@ class ScoringBakuWidget extends StatelessWidget {
 
   Widget _buildBottomBar(BuildContext context, int totalJurus) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: AppDecorations.card(
+        radius: 16,
+        borderColor: AppColors.border,
+        elevated: false,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Center: Kemantapan Status
           Expanded(
             child: InkWell(
               onTap: () {
@@ -424,18 +455,20 @@ class ScoringBakuWidget extends StatelessWidget {
                   ),
                 );
               },
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.military_tech_rounded,
-                      color: Color(0xFF38BDF8),
-                      size: 14,
+                      color: scoreKemantapan == null
+                          ? AppColors.amber
+                          : AppColors.sky,
+                      size: 15,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 5),
                     Flexible(
                       child: Text(
                         scoreKemantapan == null
@@ -444,11 +477,11 @@ class ScoringBakuWidget extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
                           color: scoreKemantapan == null
-                              ? const Color(0xFFF59E0B)
-                              : const Color(0xFF38BDF8),
+                              ? AppColors.amberText
+                              : AppColors.skyText,
                         ),
                       ),
                     ),
@@ -458,7 +491,6 @@ class ScoringBakuWidget extends StatelessWidget {
             ),
           ),
 
-          // Reset Button
           OutlinedButton.icon(
             onPressed: () {
               if (!isJuriReady) {
@@ -475,21 +507,27 @@ class ScoringBakuWidget extends StatelessWidget {
                 ),
               );
             },
-            icon: const Icon(Icons.refresh_rounded, size: 13, color: Color(0xFFEF4444)),
-            label: const Text(
+            icon: const Icon(
+              Icons.refresh_rounded,
+              size: 13,
+              color: AppColors.primary,
+            ),
+            label: Text(
               'Reset',
               style: TextStyle(
                 fontSize: 10.5,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFFEF4444),
+                fontWeight: FontWeight.w800,
+                color: AppColors.primaryText,
               ),
             ),
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF7F1D1D)),
-              backgroundColor: const Color(0xFF450A0A).withValues(alpha: 0.3),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              minimumSize: const Size(54, 28),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              side: BorderSide(color: AppColors.primaryBorder),
+              backgroundColor: AppColors.primarySoft,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              minimumSize: const Size(56, 30),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           ),
         ],

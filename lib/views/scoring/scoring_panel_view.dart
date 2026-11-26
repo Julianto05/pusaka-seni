@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/scoring_models.dart';
 import '../../services/gelanggang_sync_service.dart';
+import '../../theme/app_theme.dart';
 import 'components/modals/portrait_advisory_banner.dart';
 import 'components/scoring_baku_widget.dart';
 import 'components/scoring_ganda_widget.dart';
@@ -97,11 +98,13 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
     }
     final state = sync.getArenaState(_arenaCode);
     if (_juriNumber > state.activeJuriCount) {
+      final clamped = state.activeJuriCount.clamp(1, 10);
       if (mounted) {
         setState(() {
-          _juriNumber = state.activeJuriCount;
+          _juriNumber = clamped;
         });
       }
+      sync.setSelectedJuriNumber(clamped);
     }
     if (sync.lastSyncAction == 'ATHLETE_SELECTED') {
       if (mounted) {
@@ -152,6 +155,54 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
         );
       }
     } else {
+      // Jika Dewan baru saja mengesahkan partai saat popup ringkasan skor terkunci,
+      // tutup popup secara otomatis agar juri kembali ke layar standby.
+      if (_isSummaryPopupShowing &&
+          (sync.lastSyncAction == 'MATCH_FINALIZED' ||
+              state.isMatchFinalized)) {
+        if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        _isSummaryPopupShowing = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Partai telah disahkan oleh Dewan Pertandingan!'),
+              backgroundColor: AppColors.emerald,
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+
+      // Jika Dewan mereset slot juri ini sehingga status kembali not_ready,
+      // tutup popup ringkasan (jika ada) dan tampilkan ulang popup READY.
+      if ((sync.lastSyncAction == 'JURI_CLAIM_RELEASED' ||
+              sync.lastSyncAction == 'JURI_CLAIMS_CLEARED') &&
+          !sync.isJuriReady(_juriNumber, arenaCode: _arenaCode)) {
+        if (_isSummaryPopupShowing &&
+            mounted &&
+            Navigator.of(context, rootNavigator: true).canPop()) {
+          Navigator.of(context, rootNavigator: true).pop();
+          _isSummaryPopupShowing = false;
+        }
+        if (mounted) {
+          setState(() {
+            _isScoreSubmitted = false;
+            _lastSubmittedData = null;
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted &&
+                !_isReadyPopupShowing &&
+                !sync.isJuriReady(_juriNumber, arenaCode: _arenaCode)) {
+              _showJuriReadyPopup();
+            }
+          });
+        }
+      }
+
       // Periksa sinkronisasi perubahan mode timer dari Timekeeper
       if (_category == SeniCategory.tunggal && !_isScoreSubmitted) {
         final expectedJurusList = JurusModel.getTunggalJurusForMode(
@@ -200,13 +251,14 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
             );
 
             return AlertDialog(
-              backgroundColor: const Color(0xFF0F172A),
+              backgroundColor: AppColors.surface,
+              surfaceTintColor: Colors.transparent,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 side: BorderSide(
                   color: isReady
-                      ? const Color(0xFF10B981).withValues(alpha: 0.6)
-                      : const Color(0xFFDC2626).withValues(alpha: 0.6),
+                      ? AppColors.emeraldBorder
+                      : AppColors.primaryBorder,
                   width: 1.5,
                 ),
               ),
@@ -221,16 +273,16 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(9),
                             decoration: BoxDecoration(
                               color: isReady
-                                  ? const Color(0xFF064E3B)
-                                  : const Color(0xFF450A0A),
-                              borderRadius: BorderRadius.circular(10),
+                                  ? AppColors.emeraldSoft
+                                  : AppColors.primarySoft,
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: isReady
-                                    ? const Color(0xFF10B981)
-                                    : const Color(0xFFDC2626),
+                                    ? AppColors.emeraldBorder
+                                    : AppColors.primaryBorder,
                               ),
                             ),
                             child: Icon(
@@ -238,8 +290,8 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                                   ? Icons.check_circle_rounded
                                   : Icons.sports_kabaddi_rounded,
                               color: isReady
-                                  ? const Color(0xFF6EE7B7)
-                                  : const Color(0xFFFCA5A5),
+                                  ? AppColors.emerald
+                                  : AppColors.primary,
                               size: 24,
                             ),
                           ),
@@ -250,21 +302,32 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                               children: [
                                 Text(
                                   'KESIAPAN JURI $_juriNumber',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    letterSpacing: 0.5,
+                                    color: AppColors.textPrimary,
+                                    letterSpacing: 0.4,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  'GELANGGANG $_arenaCode • JURI $_juriNumber',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF94A3B8),
-                                  ),
+                                Builder(
+                                  builder: (context) {
+                                    final evTitle = currentSync
+                                        .getArenaState(_arenaCode)
+                                        .lockedEventTitle;
+                                    final subtitle =
+                                        evTitle != null && evTitle.isNotEmpty
+                                            ? '${evTitle.toUpperCase()} • $_arenaCode • JURI $_juriNumber'
+                                            : 'GELANGGANG $_arenaCode • JURI $_juriNumber';
+                                    return Text(
+                                      subtitle,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ],
                             ),
@@ -276,11 +339,11 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                       // Athlete & Match Card
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFF334155)),
+                        padding: const EdgeInsets.all(13),
+                        decoration: AppDecorations.softTile(
+                          radius: 16,
+                          color: AppColors.surfaceSoft,
+                          borderColor: AppColors.border,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,8 +359,8 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                                     vertical: 3,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFDC2626),
-                                    borderRadius: BorderRadius.circular(6),
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(7),
                                   ),
                                   child: Text(
                                     'PARTAI ${_athlete.partai}',
@@ -314,25 +377,28 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                                     vertical: 3,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF334155),
-                                    borderRadius: BorderRadius.circular(6),
+                                    color: AppColors.skySoft,
+                                    borderRadius: BorderRadius.circular(7),
+                                    border: Border.all(
+                                      color: AppColors.skyBorder,
+                                    ),
                                   ),
                                   child: Text(
                                     _category.title.toUpperCase(),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 10.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF38BDF8),
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.skyText,
                                     ),
                                   ),
                                 ),
                                 if (_athlete.pool.isNotEmpty)
                                   Text(
                                     'POOL ${_athlete.pool.toUpperCase()}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF94A3B8),
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textMuted,
                                     ),
                                   ),
                               ],
@@ -340,55 +406,53 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                             const SizedBox(height: 8),
                             Text(
                               _athlete.name,
-                              style: const TextStyle(
-                                fontSize: 14,
+                              style: TextStyle(
+                                fontSize: 14.5,
                                 fontWeight: FontWeight.w900,
-                                color: Colors.white,
+                                color: AppColors.textPrimary,
                               ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               _athlete.kontingen,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFFCBD5E1),
+                                color: AppColors.textSecondary,
                               ),
                             ),
                             if (_category == SeniCategory.tunggal) ...[
                               const SizedBox(height: 10),
                               Container(
-                                padding: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(9),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0F172A),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: const Color(0xFF334155),
-                                  ),
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: AppColors.border),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
-                                        Icon(
+                                        const Icon(
                                           Icons.format_list_numbered_rounded,
-                                          color: Color(0xFF38BDF8),
+                                          color: AppColors.sky,
                                           size: 14,
                                         ),
-                                        SizedBox(width: 6),
+                                        const SizedBox(width: 6),
                                         Expanded(
                                           child: Text(
                                             _bakuModeDescription,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFFE2E8F0),
+                                              fontWeight: FontWeight.w800,
+                                              color: AppColors.textPrimary,
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 5),
                                     Wrap(
                                       spacing: 4,
                                       runSpacing: 4,
@@ -410,27 +474,27 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                         spacing: 6,
                         runSpacing: 4,
                         children: [
-                          const Text(
+                          Text(
                             'Status Juri: ',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF94A3B8),
+                              color: AppColors.textSecondary,
                             ),
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
+                              horizontal: 11,
+                              vertical: 4.5,
                             ),
                             decoration: BoxDecoration(
                               color: isReady
-                                  ? const Color(0xFF064E3B)
-                                  : const Color(0xFF450A0A),
+                                  ? AppColors.emeraldSoft
+                                  : AppColors.primarySoft,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
                                 color: isReady
-                                    ? const Color(0xFF10B981)
-                                    : const Color(0xFFDC2626),
+                                    ? AppColors.emeraldBorder
+                                    : AppColors.primaryBorder,
                               ),
                             ),
                             child: Row(
@@ -441,8 +505,8 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                                   height: 8,
                                   decoration: BoxDecoration(
                                     color: isReady
-                                        ? const Color(0xFF10B981)
-                                        : const Color(0xFFDC2626),
+                                        ? AppColors.emerald
+                                        : AppColors.primary,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
@@ -457,10 +521,10 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                                       : 'BELUM READY',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w800,
                                     color: isReady
-                                        ? const Color(0xFF6EE7B7)
-                                        : const Color(0xFFFCA5A5),
+                                        ? AppColors.emeraldText
+                                        : AppColors.primaryText,
                                   ),
                                 ),
                               ],
@@ -502,19 +566,19 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                                     ),
                                   ],
                                 ),
-                                backgroundColor: const Color(0xFF10B981),
+                                backgroundColor: AppColors.emerald,
                                 duration: const Duration(seconds: 2),
                                 behavior: SnackBarBehavior.floating,
                               ),
                             );
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
+                            backgroundColor: AppColors.emerald,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            elevation: 4,
+                            elevation: 0,
                           ),
                           icon: const Icon(
                             Icons.check_circle_rounded,
@@ -529,20 +593,21 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                               style: const TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5,
+                                letterSpacing: 0.4,
                               ),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       TextButton(
                         onPressed: () => Navigator.of(ctx).pop(),
-                        child: const Text(
+                        child: Text(
                           'Tutup / Konfirmasi Nanti',
                           style: TextStyle(
                             fontSize: 11.5,
-                            color: Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
                           ),
                         ),
                       ),
@@ -585,14 +650,22 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
       groups[j.weaponGroup] = (groups[j.weaponGroup] ?? 0) + j.totalGerakan;
     }
     return groups.entries.map((entry) {
-      Color c = const Color(0xFF38BDF8);
+      Color bg = AppColors.skySoft;
+      Color border = AppColors.skyBorder;
+      Color fg = AppColors.skyText;
       final l = entry.key.toLowerCase();
       if (l.contains('tangan')) {
-        c = const Color(0xFFF59E0B);
+        bg = AppColors.amberSoft;
+        border = AppColors.amberBorder;
+        fg = AppColors.amberText;
       } else if (l.contains('golok')) {
-        c = const Color(0xFF3B82F6);
+        bg = AppColors.blueSoft;
+        border = AppColors.blueBorder;
+        fg = AppColors.blueText;
       } else if (l.contains('toya')) {
-        c = const Color(0xFFA855F7);
+        bg = AppColors.purpleSoft;
+        border = AppColors.purpleBorder;
+        fg = AppColors.purple;
       }
 
       final jurusInGroup = _jurusList
@@ -603,18 +676,18 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
           : 'Jurus ${jurusInGroup.first.jurusNumber}';
 
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
         decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: c.withValues(alpha: 0.4)),
+          color: bg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: border),
         ),
         child: Text(
           '${entry.key}: $rangeStr (${entry.value} grk)',
           style: TextStyle(
             fontSize: 9.5,
-            color: c,
-            fontWeight: FontWeight.w600,
+            color: fg,
+            fontWeight: FontWeight.w700,
           ),
         ),
       );
@@ -741,6 +814,14 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
 
   // --- BAKU ACTIONS (NO VIBRATION) ---
 
+  String? _activeBakuJurusLabel() {
+    if (!_category.isBaku || _jurusList.isEmpty) return null;
+    if (_isCompleted) return 'Tuntas';
+    if (_category == SeniCategory.beregu) return 'Beregu';
+    final idx = _currentJurusIndex.clamp(0, _jurusList.length - 1);
+    return _jurusList[idx].weaponGroup;
+  }
+
   void _notifyScoringInProgress() {
     final sync = GelanggangSyncService.instance;
     final currentStatus = sync.getJuriStatus(
@@ -748,9 +829,18 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
       arenaCode: _arenaCode,
     );
     if (currentStatus != 'submitted') {
+      final int? currJurus = _category.isBaku && _jurusList.isNotEmpty
+          ? (_isCompleted ? _jurusList.length : _currentJurusIndex + 1)
+          : null;
+      final int? totJurus = _category.isBaku && _jurusList.isNotEmpty
+          ? _jurusList.length
+          : null;
       sync.juriStartScoring(
         juriNumber: _juriNumber,
         currentScore: _calculateCurrentScore(),
+        currentJurus: currJurus,
+        totalJurus: totJurus,
+        jurusLabel: _activeBakuJurusLabel(),
         arenaCode: _arenaCode,
       );
     }
@@ -791,6 +881,7 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
       _scoreKemantapan = null;
       _isCompleted = false;
     });
+    _notifyScoringInProgress();
     _saveOngoingSession();
   }
 
@@ -806,6 +897,11 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
     GelanggangSyncService.instance.juriStartScoring(
       juriNumber: _juriNumber,
       currentScore: total,
+      currentJurus: _jurusList.isNotEmpty
+          ? (_isCompleted ? _jurusList.length : _currentJurusIndex + 1)
+          : null,
+      totalJurus: _jurusList.isNotEmpty ? _jurusList.length : null,
+      jurusLabel: _activeBakuJurusLabel(),
       arenaCode: _arenaCode,
     );
     _saveOngoingSession();
@@ -867,6 +963,9 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
       score: totalFinal,
       kebenaran: kebenaran,
       kemantapan: _scoreKemantapan,
+      currentJurus: _jurusList.length,
+      totalJurus: _jurusList.length,
+      jurusLabel: 'Tuntas',
       arenaCode: _arenaCode,
     );
 
@@ -949,39 +1048,52 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
   }) {
     if (!mounted) return;
     _isSummaryPopupShowing = true;
+    final bool initiallyFinalized = GelanggangSyncService.instance
+        .getArenaState(_arenaCode)
+        .isMatchFinalized;
 
     showDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: initiallyFinalized,
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Color(0xFF10B981), width: 1.5),
-          ),
-          contentPadding: const EdgeInsets.all(20),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+        return ListenableBuilder(
+          listenable: GelanggangSyncService.instance,
+          builder: (dialogCtx, _) {
+            final bool isMatchFinalized = GelanggangSyncService.instance
+                .getArenaState(_arenaCode)
+                .isMatchFinalized;
+
+            return PopScope(
+              canPop: isMatchFinalized,
+              child: AlertDialog(
+                backgroundColor: AppColors.surface,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  side: BorderSide(color: AppColors.emeraldBorder, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.all(20),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                   // Top Success Icon
                   Container(
-                    width: 54,
-                    height: 54,
+                    width: 56,
+                    height: 56,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                      color: AppColors.emeraldSoft,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFF10B981),
+                        color: AppColors.emeraldBorder,
                         width: 2,
                       ),
                     ),
                     child: const Icon(
                       Icons.check_circle_rounded,
-                      color: Color(0xFF10B981),
+                      color: AppColors.emerald,
                       size: 32,
                     ),
                   ),
@@ -990,21 +1102,21 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                   Text(
                     'NILAI JURI $_juriNumber BERHASIL DISINKRONKAN',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: 0.6,
-                      color: Colors.white,
+                      letterSpacing: 0.5,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '${_athlete.partai} • ${_category.title.toUpperCase()}',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF38BDF8),
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.skyText,
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -1012,29 +1124,29 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                   // Athlete info card
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF334155)),
+                    padding: const EdgeInsets.all(11),
+                    decoration: AppDecorations.softTile(
+                      radius: 12,
+                      color: AppColors.surfaceSoft,
+                      borderColor: AppColors.border,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           _athlete.name.toUpperCase(),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
-                            color: Colors.white,
+                            color: AppColors.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${_athlete.kontingen} • ${_athlete.pool}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF94A3B8),
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -1050,39 +1162,39 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 8,
+                              vertical: 9,
                             ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: const Color(0xFF334155),
-                              ),
+                            decoration: AppDecorations.softTile(
+                              radius: 12,
+                              color: AppColors.surfaceSoft,
+                              borderColor: AppColors.border,
                             ),
                             child: Column(
                               children: [
-                                const Text(
+                                Text(
                                   'Kebenaran',
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: Color(0xFF94A3B8),
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   kebenaran.toStringAsFixed(2),
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
                                     fontFamily: 'monospace',
-                                    color: Colors.white,
+                                    color: AppColors.textPrimary,
                                   ),
                                 ),
                                 Text(
                                   'Salah: ${mistakes ?? 0}x',
                                   style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Color(0xFFF87171),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
                                   ),
                                 ),
                               ],
@@ -1094,39 +1206,38 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 8,
+                              vertical: 9,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: const Color(0xFF334155),
-                              ),
+                              color: AppColors.skySoft,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.skyBorder),
                             ),
                             child: Column(
                               children: [
-                                const Text(
+                                Text(
                                   'Kemantapan',
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: Color(0xFF94A3B8),
+                                    color: AppColors.skyText,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   '+${(kemantapan ?? 0.0).toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
                                     fontFamily: 'monospace',
-                                    color: Color(0xFF38BDF8),
+                                    color: AppColors.skyText,
                                   ),
                                 ),
-                                const Text(
+                                Text(
                                   'Bonus',
                                   style: TextStyle(
-                                    fontSize: 9,
-                                    color: Color(0xFF64748B),
+                                    fontSize: 9.5,
+                                    color: AppColors.textMuted,
                                   ),
                                 ),
                               ],
@@ -1140,58 +1251,67 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
 
                   if (attackDefense != null) ...[
                     Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF334155)),
+                      padding: const EdgeInsets.all(10),
+                      decoration: AppDecorations.softTile(
+                        radius: 12,
+                        color: AppColors.surfaceSoft,
+                        borderColor: AppColors.border,
                       ),
                       child: Column(
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
+                              Text(
                                 'Nilai Awal Penampilan:',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  color: Color(0xFF94A3B8),
+                                  color: AppColors.textSecondary,
                                 ),
                               ),
                               Text(
                                 ScoringGandaWidget.baseScore.toStringAsFixed(2),
                                 style: const TextStyle(
                                   fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF10B981),
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.emerald,
                                 ),
                               ),
                             ],
                           ),
-                          const Divider(color: Color(0xFF334155), height: 10),
-                          _buildGandaPenaltyRow('Penalti Serang Bela:', attackDefense),
+                          Divider(color: AppColors.border, height: 12),
+                          _buildGandaPenaltyRow(
+                            'Penalti Serang Bela:',
+                            attackDefense,
+                          ),
                           const SizedBox(height: 4),
-                          _buildGandaPenaltyRow('Penalti Kemantapan:', firmnessHarmony ?? 0.0),
+                          _buildGandaPenaltyRow(
+                            'Penalti Kemantapan:',
+                            firmnessHarmony ?? 0.0,
+                          ),
                           const SizedBox(height: 4),
-                          _buildGandaPenaltyRow('Penalti Penjiwaan:', soulfulness ?? 0.0),
-                          const Divider(color: Color(0xFF334155), height: 10),
+                          _buildGandaPenaltyRow(
+                            'Penalti Penjiwaan:',
+                            soulfulness ?? 0.0,
+                          ),
+                          Divider(color: AppColors.border, height: 12),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
+                              Text(
                                 'Total Pengurangan Penalti:',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFFCA5A5),
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primaryText,
                                 ),
                               ),
                               Text(
                                 '-${(attackDefense + (firmnessHarmony ?? 0.0) + (soulfulness ?? 0.0)).toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFFEF4444),
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ],
@@ -1206,20 +1326,21 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                      vertical: 12,
+                      vertical: 14,
                       horizontal: 16,
                     ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF065F46), Color(0xFF047857)],
+                        colors: [Color(0xFF059669), Color(0xFF047857)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF10B981)),
+                      borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
+                          color: AppColors.emerald.withValues(alpha: 0.28),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
@@ -1229,7 +1350,7 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                           'TOTAL NILAI JURI AKHIR',
                           style: TextStyle(
                             fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                             letterSpacing: 1.0,
                             color: Color(0xFFD1FAE5),
                           ),
@@ -1253,37 +1374,52 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Waiting indicator
+                  // Waiting / Endorsed indicator
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+                      horizontal: 11,
+                      vertical: 9,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(8),
+                      color: isMatchFinalized
+                          ? AppColors.emeraldSoft
+                          : AppColors.skySoft,
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+                        color: isMatchFinalized
+                            ? AppColors.emeraldBorder
+                            : AppColors.skyBorder,
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF38BDF8),
+                        if (isMatchFinalized)
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 16,
+                            color: AppColors.emerald,
+                          )
+                        else
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.sky,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Menunggu Dewan Pertandingan memulai partai berikutnya...',
+                            isMatchFinalized
+                                ? 'Partai telah disahkan Dewan. Menunggu partai berikutnya...'
+                                : 'Menunggu Dewan Pertandingan mengesahkan partai atau memulai partai berikutnya...',
                             style: TextStyle(
                               fontSize: 10.5,
-                              color: Color(0xFFBAE6FD),
-                              fontWeight: FontWeight.w500,
+                              color: isMatchFinalized
+                                  ? AppColors.emeraldText
+                                  : AppColors.skyText,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1292,34 +1428,78 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Close button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF334155),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  // Locked while waiting for Dewan; closeable only after Dewan finalizes
+                  if (isMatchFinalized)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: AppColors.surfaceSoft,
+                          foregroundColor: AppColors.textPrimary,
+                          side: BorderSide(color: AppColors.borderStrong),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'TUTUP (MENUNGGU PARTAI BERIKUTNYA)',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Text(
-                        'TUTUP (MENUNGGU PARTAI BERIKUTNYA)',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 11,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.amberSoft,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.amberBorder),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.lock_clock_rounded,
+                            size: 15,
+                            color: AppColors.amber,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'TERKUNCI — MENUNGGU PENGESAHAN DEWAN',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.amberText,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
+        ),
+      );
+          },
         );
       },
     ).then((_) {
@@ -1333,81 +1513,80 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF10B981), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppColors.emeraldSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.emeraldBorder, width: 1.2),
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(5),
+            padding: const EdgeInsets.all(6),
             decoration: const BoxDecoration(
-              color: Color(0xFF065F46),
+              color: AppColors.emerald,
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.check_rounded,
-              color: Color(0xFF34D399),
-              size: 15,
+              color: Colors.white,
+              size: 14,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 3,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       'NILAI JURI $_juriNumber: ${score.toStringAsFixed(2)} TERKUNCI',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF6EE7B7),
-                        letterSpacing: 0.5,
+                        color: AppColors.emeraldText,
+                        letterSpacing: 0.4,
                       ),
                     ),
-                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1,
+                        horizontal: 6,
+                        vertical: 1.5,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(4),
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.emeraldBorder),
                       ),
-                      child: const Text(
+                      child: Text(
                         'SELESAI',
                         style: TextStyle(
                           fontSize: 8.5,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF6EE7B7),
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.emeraldText,
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 1),
-                const Text(
+                Text(
                   'Terkirim ke Dewan. Layar penilaian akan otomatis kembali saat Dewan memilih partai berikutnya.',
-                  style: TextStyle(fontSize: 9.5, color: Color(0xFF94A3B8)),
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 6),
-          ElevatedButton.icon(
+          OutlinedButton.icon(
             onPressed: () {
               if (_lastSubmittedData != null) {
                 _showSubmittedScorePopup(
@@ -1424,16 +1603,16 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
             icon: const Icon(Icons.receipt_long_rounded, size: 12),
             label: const Text(
               'Rincian',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
             ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1E293B),
-              foregroundColor: const Color(0xFF38BDF8),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            style: OutlinedButton.styleFrom(
+              backgroundColor: AppColors.surface,
+              foregroundColor: AppColors.skyText,
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-                side: const BorderSide(color: Color(0xFF0284C7)),
+                borderRadius: BorderRadius.circular(8),
               ),
+              side: BorderSide(color: AppColors.skyBorder),
             ),
           ),
         ],
@@ -1447,14 +1626,14 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
         Text(
           value > 0 ? '-${value.toStringAsFixed(2)}' : '0.00',
           style: TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: value > 0 ? const Color(0xFFEF4444) : Colors.white,
+            fontWeight: FontWeight.w800,
+            color: value > 0 ? AppColors.primary : AppColors.textPrimary,
           ),
         ),
       ],
@@ -1500,50 +1679,62 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
         if (didPop) return;
         _handleBackToPortal();
       },
-      child: Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
-        body: SafeArea(
-          top: !_isFullScreen,
-          bottom: false,
-          left: true,
-          right: true,
-          child: Stack(
-            children: [
-              // Main Layout Padding
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: _isFullScreen ? 6 : 8,
-                  vertical: _isFullScreen ? 3 : 6,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Top App Header
-                    ScoringHeader(
-                      arenaCode: _arenaCode,
-                      juriNumber: _juriNumber,
-                      athlete: _athlete,
-                      category: _category,
-                      currentScore: currentScore,
-                      isFullScreen: _isFullScreen,
-                      onToggleFullScreen: _toggleFullScreen,
-                      onBackToMenu: _handleBackToPortal,
-                      juriStatus: GelanggangSyncService.instance.getJuriStatus(
-                        _juriNumber,
+      child: ListenableBuilder(
+        listenable: AppThemeController.instance,
+        builder: (context, _) => Scaffold(
+        backgroundColor: AppColors.background,
+        body: Container(
+          decoration: AppDecorations.pageBackground,
+          child: SafeArea(
+            top: !_isFullScreen,
+            bottom: false,
+            left: true,
+            right: true,
+            child: Stack(
+              children: [
+                // Main Layout Padding
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: _isFullScreen ? 6 : 8,
+                    vertical: _isFullScreen ? 3 : 6,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Top App Header
+                      ScoringHeader(
                         arenaCode: _arenaCode,
+                        juriNumber: _juriNumber,
+                        athlete: _athlete,
+                        category: _category,
+                        currentScore: currentScore,
+                        isFullScreen: _isFullScreen,
+                        onToggleFullScreen: _toggleFullScreen,
+                        onBackToMenu: _handleBackToPortal,
+                        juriStatus: GelanggangSyncService.instance
+                            .getJuriStatus(
+                              _juriNumber,
+                              arenaCode: _arenaCode,
+                            ),
+                        onToggleReady: _showJuriReadyPopup,
+                        // Live Timer synced from Time Keeper
+                        timerRemainingSeconds: GelanggangSyncService.instance
+                            .getArenaState(_arenaCode)
+                            .timerRemainingSeconds,
+                        timerStatus: GelanggangSyncService.instance
+                            .getArenaState(_arenaCode)
+                            .timerStatus,
+                        // Baku specific header indicators
+                        currentJurusNumber: activeJurus?.jurusNumber,
+                        totalJurusInGroup: activeJurus?.totalJurusInGroup,
+                        currentJurusMistakes: _category.isBaku
+                            ? (_currentJurusIndex < _mistakesPerJurus.length
+                                  ? _mistakesPerJurus[_currentJurusIndex]
+                                  : 0)
+                            : null,
+                        currentJurusGerakan: activeJurus?.totalGerakan,
                       ),
-                      onToggleReady: _showJuriReadyPopup,
-                      // Baku specific header indicators
-                      currentJurusNumber: activeJurus?.jurusNumber,
-                      totalJurusInGroup: activeJurus?.totalJurusInGroup,
-                      currentJurusMistakes: _category.isBaku
-                          ? (_currentJurusIndex < _mistakesPerJurus.length
-                                ? _mistakesPerJurus[_currentJurusIndex]
-                                : 0)
-                          : null,
-                      currentJurusGerakan: activeJurus?.totalGerakan,
-                    ),
-                    const SizedBox(height: 6),
+                      const SizedBox(height: 6),
 
                     if (_isScoreSubmitted) ...[
                       _buildSubmittedStandbyBanner(),
@@ -1607,6 +1798,8 @@ class _ScoringPanelViewState extends State<ScoringPanelView> {
             ],
           ),
         ),
+        ),
+      ),
       ),
     );
   }

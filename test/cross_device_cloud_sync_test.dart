@@ -49,6 +49,9 @@ void main() {
             'sub': 1,
             'kb': 9.83,
             'km': 0.05,
+            'cj': 14,
+            'tj': 14,
+            'jl': 'Tuntas',
             'dev': 'REMOTE_JURI_1',
           }),
         },
@@ -96,6 +99,9 @@ void main() {
       expect(state.juriScores[1]?['score'], closeTo(9.88, 0.001));
       expect(state.juriScores[1]?['submitted'], isTrue);
       expect(state.juriScores[1]?['status'], 'submitted');
+      expect(state.juriScores[1]?['currentJurus'], 14);
+      expect(state.juriScores[1]?['totalJurus'], 14);
+      expect(state.juriScores[1]?['jurusLabel'], 'Tuntas');
 
       // Juri 2 had old matchVersion: claim applies (so phone 2 keeps its slot),
       // but stale score 9.10 is NOT applied to the new match!

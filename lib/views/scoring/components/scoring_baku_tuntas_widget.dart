@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../models/scoring_models.dart';
+import '../../../theme/app_theme.dart';
 import 'modals/confirm_kemantapan_dialog.dart';
 
 class ScoringBakuTuntasWidget extends StatelessWidget {
@@ -27,20 +28,25 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
   });
 
   static const List<double> kemantapanValues = [
-    0.01, 0.02, 0.03, 0.04, 0.05,
-    0.06, 0.07, 0.08, 0.09, 0.10,
+    0.01,
+    0.02,
+    0.03,
+    0.04,
+    0.05,
+    0.06,
+    0.07,
+    0.08,
+    0.09,
+    0.10,
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFF334155),
-        ),
+      padding: const EdgeInsets.all(14),
+      decoration: AppDecorations.card(
+        radius: 22,
+        borderColor: AppColors.border,
       ),
       child: Column(
         children: [
@@ -52,14 +58,19 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
               final statPills = [
                 _buildStatPill(
                   label: 'Salah',
-                  value: '${totalMistakes}x (-${(totalMistakes * 0.01).toStringAsFixed(2)})',
-                  color: const Color(0xFFEF4444),
+                  value:
+                      '${totalMistakes}x (-${(totalMistakes * 0.01).toStringAsFixed(2)})',
+                  color: AppColors.primary,
+                  bgColor: AppColors.primarySoft,
+                  borderColor: AppColors.primaryBorder,
                 ),
                 const SizedBox(width: 6),
                 _buildStatPill(
                   label: 'Kebenaran',
                   value: scoreKebenaran.toStringAsFixed(2),
-                  color: const Color(0xFF38BDF8),
+                  color: AppColors.skyText,
+                  bgColor: AppColors.skySoft,
+                  borderColor: AppColors.skyBorder,
                 ),
                 const SizedBox(width: 6),
                 _buildStatPill(
@@ -68,24 +79,35 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                       ? 'Belum'
                       : '+${scoreKemantapan!.toStringAsFixed(2)}',
                   color: scoreKemantapan == null
-                      ? const Color(0xFF94A3B8)
-                      : const Color(0xFF38BDF8),
+                      ? AppColors.textMuted
+                      : AppColors.skyText,
+                  bgColor: scoreKemantapan == null
+                      ? AppColors.surface
+                      : AppColors.skySoft,
+                  borderColor: scoreKemantapan == null
+                      ? AppColors.border
+                      : AppColors.skyBorder,
                 ),
                 const SizedBox(width: 6),
                 _buildStatPill(
                   label: 'Total Akhir',
                   value: totalFinalScore.toStringAsFixed(2),
-                  color: const Color(0xFFEF4444),
+                  color: AppColors.primary,
+                  bgColor: AppColors.primarySoft,
+                  borderColor: AppColors.primary,
                   isTotal: true,
                 ),
               ];
 
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF334155)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: AppDecorations.softTile(
+                  radius: 16,
+                  color: AppColors.surfaceSoft,
+                  borderColor: AppColors.border,
                 ),
                 child: isCompact
                     ? Column(
@@ -94,9 +116,9 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(5),
+                                padding: const EdgeInsets.all(6),
                                 decoration: const BoxDecoration(
-                                  color: Color(0xFF10B981),
+                                  color: AppColors.emerald,
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -112,19 +134,19 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                                   children: [
                                     Text(
                                       '$totalJurus Jurus Tuntas',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF10B981),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.emeraldText,
                                       ),
                                     ),
                                     Text(
                                       athlete.name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.white70,
+                                        color: AppColors.textSecondary,
                                       ),
                                     ),
                                   ],
@@ -142,13 +164,12 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                       )
                     : Row(
                         children: [
-                          // Icon & Title
                           Row(
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: const BoxDecoration(
-                                  color: Color(0xFF10B981),
+                                  color: AppColors.emerald,
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -163,17 +184,17 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                                 children: [
                                   Text(
                                     '$totalJurus Jurus Tuntas',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF10B981),
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.emeraldText,
                                     ),
                                   ),
                                   Text(
                                     athlete.name,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
-                                      color: Colors.white70,
+                                      color: AppColors.textSecondary,
                                     ),
                                   ),
                                 ],
@@ -187,16 +208,16 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
-          // Kemantapan Picker Grid Section (Ultra-Responsive)
+          // Kemantapan Picker Grid Section
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF334155)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: AppDecorations.softTile(
+                radius: 16,
+                color: AppColors.surfaceSoft,
+                borderColor: AppColors.border,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,46 +226,47 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                     children: [
                       const Icon(
                         Icons.military_tech_rounded,
-                        color: Color(0xFF38BDF8),
-                        size: 16,
+                        color: AppColors.sky,
+                        size: 17,
                       ),
                       const SizedBox(width: 6),
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Pilih Nilai Kemantapan (0.01 - 0.10):',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
                           ),
                         ),
                       ),
                       if (scoreKemantapan != null) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2.5,
+                          ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0284C7).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: const Color(0xFF0284C7).withValues(alpha: 0.5),
-                            ),
+                            color: AppColors.skySoft,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.skyBorder),
                           ),
                           child: Text(
                             '+${scoreKemantapan!.toStringAsFixed(2)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10.5,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF38BDF8),
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.skyText,
                             ),
                           ),
                         ),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
 
                   // 10 Buttons Adaptive Grid
                   Expanded(
@@ -252,21 +274,32 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                       builder: (context, constraints) {
                         final isVeryWide = constraints.maxWidth >= 540;
                         final crossAxisCount = isVeryWide ? 10 : 5;
-                        final double spacing = constraints.maxWidth < 360 ? 4 : 6;
+                        final double spacing = constraints.maxWidth < 360
+                            ? 5
+                            : 7;
                         final int rowCount = isVeryWide ? 1 : 2;
                         final double availableH = constraints.maxHeight;
-                        final double cellW = (constraints.maxWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
-                        final double targetH = ((availableH - (rowCount - 1) * spacing) / rowCount).clamp(24.0, 48.0);
-                        final double aspectRatio = (cellW / targetH).clamp(1.1, 3.2);
+                        final double cellW =
+                            (constraints.maxWidth -
+                                (crossAxisCount - 1) * spacing) /
+                            crossAxisCount;
+                        final double targetH =
+                            ((availableH - (rowCount - 1) * spacing) / rowCount)
+                                .clamp(26.0, 50.0);
+                        final double aspectRatio = (cellW / targetH).clamp(
+                          1.1,
+                          3.2,
+                        );
 
                         return GridView.builder(
                           physics: const BouncingScrollPhysics(),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            mainAxisSpacing: spacing,
-                            crossAxisSpacing: spacing,
-                            childAspectRatio: aspectRatio,
-                          ),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                mainAxisSpacing: spacing,
+                                crossAxisSpacing: spacing,
+                                childAspectRatio: aspectRatio,
+                              ),
                           itemCount: kemantapanValues.length,
                           itemBuilder: (context, index) {
                             final val = kemantapanValues[index];
@@ -285,25 +318,27 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                                   ),
                                 );
                               },
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(10),
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? const Color(0xFF0284C7)
-                                      : const Color(0xFF1E293B),
-                                  borderRadius: BorderRadius.circular(8),
+                                      ? AppColors.sky
+                                      : AppColors.surface,
+                                  borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
                                     color: isSelected
-                                        ? const Color(0xFF38BDF8)
-                                        : const Color(0xFF475569),
+                                        ? AppColors.sky
+                                        : AppColors.border,
                                     width: isSelected ? 1.5 : 1.0,
                                   ),
                                   boxShadow: isSelected
                                       ? [
                                           BoxShadow(
-                                            color: const Color(0xFF0284C7)
-                                                .withValues(alpha: 0.4),
-                                            blurRadius: 6,
+                                            color: AppColors.sky.withValues(
+                                              alpha: 0.3,
+                                            ),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
                                           ),
                                         ]
                                       : null,
@@ -312,16 +347,18 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                                   child: FittedBox(
                                     fit: BoxFit.scaleDown,
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
                                       child: Text(
                                         '+${val.toStringAsFixed(2)}',
                                         style: TextStyle(
                                           fontSize: 12.5,
-                                          fontWeight: FontWeight.bold,
+                                          fontWeight: FontWeight.w800,
                                           fontFamily: 'monospace',
                                           color: isSelected
                                               ? Colors.white
-                                              : const Color(0xFFE2E8F0),
+                                              : AppColors.textPrimary,
                                         ),
                                       ),
                                     ),
@@ -335,15 +372,15 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 2),
-                  const Center(
+                  const SizedBox(height: 4),
+                  Center(
                     child: Text(
                       'Ketuk tombol nilai kemantapan untuk konfirmasi dan simpan penilaian.',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 9.5,
-                        color: Color(0xFF64748B),
+                        fontSize: 10,
+                        color: AppColors.textMuted,
                       ),
                     ),
                   ),
@@ -353,25 +390,28 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // Bottom Controls: Submit Final Score (Full Width)
+          // Bottom Controls: Submit Final Score
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onSubmitFinalScore,
-              icon: const Icon(Icons.done_all_rounded, size: 16),
+              icon: const Icon(Icons.done_all_rounded, size: 17),
               label: const FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
                   'Selesai & Sinkronkan Nilai',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF10B981),
+                backgroundColor: AppColors.emerald,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 12),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 14,
+                ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 elevation: 0,
               ),
@@ -386,16 +426,16 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
     required String label,
     required String value,
     required Color color,
+    required Color bgColor,
+    required Color borderColor,
     bool isTotal = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: bgColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isTotal ? color.withValues(alpha: 0.5) : const Color(0xFF334155),
-        ),
+        border: Border.all(color: borderColor, width: isTotal ? 1.3 : 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,15 +445,15 @@ class ScoringBakuTuntasWidget extends StatelessWidget {
             label.toUpperCase(),
             style: TextStyle(
               fontSize: 9,
-              fontWeight: FontWeight.bold,
-              color: isTotal ? color : const Color(0xFF64748B),
+              fontWeight: FontWeight.w800,
+              color: isTotal ? color : AppColors.textMuted,
             ),
           ),
           Text(
             value,
             style: TextStyle(
               fontSize: 12,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w800,
               fontFamily: 'monospace',
               color: color,
             ),

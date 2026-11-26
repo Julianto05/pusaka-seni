@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/scoring_models.dart';
 import '../../services/gelanggang_sync_service.dart';
+import '../../theme/app_theme.dart';
 
 enum TimeCategoryMode {
   standar('Standar (03:00)', 180),
@@ -38,6 +39,9 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
   TimerStatus _status = TimerStatus.standby;
   bool _isFullScreen = false;
 
+  late AthleteModel _athlete;
+  late SeniCategory _category;
+
   void _toggleFullScreen() {
     setState(() => _isFullScreen = !_isFullScreen);
     if (_isFullScreen) {
@@ -46,10 +50,6 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
   }
-
-  // Active athlete context synced with Dewan via GelanggangSyncService
-  late AthleteModel _athlete;
-  late SeniCategory _category;
 
   @override
   void initState() {
@@ -109,7 +109,7 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
               'Sinkronisasi Dewan: ${_athlete.name} (${_athlete.partai} - ${_category.title})',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
-            backgroundColor: const Color(0xFF10B981),
+            backgroundColor: AppColors.emerald,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 3),
           ),
@@ -127,21 +127,14 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
     );
   }
 
-  void _startTimer() {
-    GelanggangSyncService.instance.timekeeperStartTimer(arenaCode: _arenaCode);
-  }
-
-  void _pauseTimer() {
-    GelanggangSyncService.instance.timekeeperPauseTimer(arenaCode: _arenaCode);
-  }
-
-  void _stopTimer() {
-    GelanggangSyncService.instance.timekeeperStopTimer(arenaCode: _arenaCode);
-  }
-
-  void _resetTimer() {
-    GelanggangSyncService.instance.timekeeperResetTimer(arenaCode: _arenaCode);
-  }
+  void _startTimer() =>
+      GelanggangSyncService.instance.timekeeperStartTimer(arenaCode: _arenaCode);
+  void _pauseTimer() =>
+      GelanggangSyncService.instance.timekeeperPauseTimer(arenaCode: _arenaCode);
+  void _stopTimer() =>
+      GelanggangSyncService.instance.timekeeperStopTimer(arenaCode: _arenaCode);
+  void _resetTimer() =>
+      GelanggangSyncService.instance.timekeeperResetTimer(arenaCode: _arenaCode);
 
   String _formatTime(int seconds) {
     final bool isNegative = seconds < 0;
@@ -157,84 +150,76 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
     final int elapsed = math.max(0, _selectedMode.durationSeconds - _remainingSeconds);
     final double progress = (_remainingSeconds / _selectedMode.durationSeconds).clamp(0.0, 1.0);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      body: SafeArea(
-        top: !_isFullScreen,
-        bottom: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: _isFullScreen ? 6 : 10,
-            vertical: _isFullScreen ? 4 : 8,
-          ),
-          child: Column(
-            children: [
-              // Top Header
-              _buildHeader(),
-              SizedBox(height: _isFullScreen ? 4 : 8),
+    return ListenableBuilder(
+      listenable: AppThemeController.instance,
+      builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
+      body: Container(
+        decoration: AppDecorations.pageBackground,
+        child: SafeArea(
+          top: !_isFullScreen,
+          bottom: false,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: _isFullScreen ? 8 : 12,
+              vertical: _isFullScreen ? 6 : 10,
+            ),
+            child: Column(
+              children: [
+                _buildHeader(),
+                SizedBox(height: _isFullScreen ? 6 : 10),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth >= 900 ||
+                          (constraints.maxWidth >= 700 &&
+                              constraints.maxWidth > constraints.maxHeight);
 
-              // Responsive Timer Dashboard
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth >= 900 ||
-                        (constraints.maxWidth >= 700 && constraints.maxWidth > constraints.maxHeight);
+                      if (isWide) {
+                        return Row(
+                          children: [
+                            Expanded(flex: 4, child: _buildPresetsAndAthleteCard()),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 6,
+                              child: _buildCountdownAndActionsCard(elapsed, progress),
+                            ),
+                          ],
+                        );
+                      }
 
-                    if (isWide) {
-                      return Row(
-                        children: [
-                          // Left Column: Controls & Preset
-                          Expanded(
-                            flex: 4,
-                            child: _buildPresetsAndAthleteCard(),
-                          ),
-                          const SizedBox(width: 10),
-
-                          // Right Column: Countdown Big Display & Controls
-                          Expanded(
-                            flex: 6,
-                            child: _buildCountdownAndActionsCard(elapsed, progress),
-                          ),
-                        ],
-                      );
-                    } else {
-                      // Compact Screen (Mobile & Tablet Portrait): Vertical scrollable
                       return SingleChildScrollView(
                         physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.only(bottom: 12),
                         child: Column(
                           children: [
                             _buildCountdownAndActionsCard(elapsed, progress, isCompact: true),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 12),
                             _buildPresetsAndAthleteCard(isCompact: true),
                           ],
                         ),
                       );
-                    }
-                  },
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
+    ),
     );
   }
 
   Widget _buildPresetsAndAthleteCard({bool isCompact = false}) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
-      child: Column(
+    Widget buildContent({bool useSpacer = false}) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: isCompact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: useSpacer ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.tune_rounded, color: Color(0xFF14B8A6), size: 16),
+              Icon(Icons.tune_rounded, color: AppColors.teal, size: 17),
               SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -242,38 +227,37 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
-          // Presets
           ...TimeCategoryMode.values.map((mode) {
             final isSelected = _selectedMode == mode;
             return Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.only(bottom: 7),
               child: InkWell(
                 onTap: () => _switchMode(mode),
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
+                borderRadius: BorderRadius.circular(12),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
+                    horizontal: 12,
+                    vertical: 9,
                   ),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? const Color(0xFF0F766E).withValues(alpha: 0.3)
-                        : const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(10),
+                        ? AppColors.tealSoft
+                        : AppColors.surfaceSoft,
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected
-                          ? const Color(0xFF14B8A6)
-                          : const Color(0xFF334155),
+                      color: isSelected ? AppColors.teal : AppColors.border,
+                      width: isSelected ? 1.5 : 1.0,
                     ),
                   ),
                   child: Row(
@@ -284,11 +268,13 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontSize: 12,
+                            fontWeight: isSelected
+                                ? FontWeight.w800
+                                : FontWeight.w600,
                             color: isSelected
-                                ? const Color(0xFF99F6E4)
-                                : const Color(0xFF94A3B8),
+                                ? AppColors.tealText
+                                : AppColors.textSecondary,
                           ),
                         ),
                       ),
@@ -296,8 +282,8 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                         const SizedBox(width: 4),
                         const Icon(
                           Icons.check_circle_rounded,
-                          color: Color(0xFF14B8A6),
-                          size: 14,
+                          color: AppColors.teal,
+                          size: 16,
                         ),
                       ],
                     ],
@@ -307,17 +293,12 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
             );
           }),
 
-          if (!isCompact) const Spacer(),
+          if (useSpacer) const Spacer(),
           const SizedBox(height: 8),
 
-          // Active Athlete Info Card (Synchronized from Dewan Pertandingan)
           Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF334155)),
-            ),
+            padding: const EdgeInsets.all(11),
+            decoration: AppDecorations.softTile(radius: 14),
             child: Row(
               children: [
                 Expanded(
@@ -326,25 +307,28 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                     children: [
                       Row(
                         children: [
-                          const Flexible(
+                          Flexible(
                             child: Text(
                               'PESILAT TAMPIL SAAT INI',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textMuted,
                                 letterSpacing: 0.6,
                               ),
                             ),
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFDC2626),
-                              borderRadius: BorderRadius.circular(3),
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
                               _athlete.partai.toUpperCase(),
@@ -357,15 +341,15 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         _athlete.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                       Text(
@@ -374,7 +358,8 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 10.5,
-                          color: Color(0xFF38BDF8),
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.sky,
                         ),
                       ),
                     ],
@@ -383,123 +368,125 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                 Tooltip(
                   message: 'Partai dikontrol oleh Dewan Pertandingan',
                   child: Container(
-                    padding: const EdgeInsets.all(5),
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                      color: AppColors.emeraldSoft,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.emeraldBorder),
                     ),
-                    child: const Icon(Icons.lock_outline_rounded, color: Color(0xFF10B981), size: 14),
+                    child: const Icon(
+                      Icons.lock_outline_rounded,
+                      color: AppColors.emerald,
+                      size: 14,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCountdownAndActionsCard(int elapsed, double progress, {bool isCompact = false}) {
-    final bool isOvertime = _remainingSeconds < 0;
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isOvertime ? const Color(0xFFEF4444) : const Color(0xFF334155),
-          width: isOvertime ? 2.0 : 1.0,
-        ),
-        boxShadow: isOvertime
-            ? [
-                BoxShadow(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.25),
-                  blurRadius: 14,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : null,
-      ),
-      child: Column(
+      decoration: AppDecorations.card(radius: 22),
+      child: isCompact
+          ? buildContent(useSpacer: false)
+          : LayoutBuilder(
+              builder: (context, cardConstraints) {
+                if (cardConstraints.maxHeight >= 310) {
+                  return buildContent(useSpacer: true);
+                }
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: buildContent(useSpacer: false),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildCountdownAndActionsCard(
+    int elapsed,
+    double progress, {
+    bool isCompact = false,
+  }) {
+    final bool isOvertime = _remainingSeconds < 0;
+    final Color statusColor = _getStatusColor();
+
+    Widget buildContent({required bool isShort}) {
+      return Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: isCompact ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Status Pill
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: _getStatusColor().withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _getStatusColor().withValues(alpha: 0.5),
-              ),
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: statusColor.withValues(alpha: 0.4)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.circle, size: 7, color: _getStatusColor()),
-                const SizedBox(width: 5),
+                Icon(Icons.circle, size: 7, color: statusColor),
+                const SizedBox(width: 6),
                 Text(
                   _getStatusLabel().toUpperCase(),
                   style: TextStyle(
                     fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: 0.8,
-                    color: _getStatusColor(),
+                    color: statusColor,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          SizedBox(height: isShort ? 4 : 10),
 
-          // Giant Remaining Countdown (FittedBox to prevent any overflow)
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               _formatTime(_remainingSeconds),
               style: TextStyle(
-                fontSize: isCompact ? 54 : 64,
+                fontSize: isShort ? 46 : (isCompact ? 56 : 68),
                 fontWeight: FontWeight.w900,
                 fontFamily: 'monospace',
-                color: isOvertime
-                    ? const Color(0xFFEF4444)
-                    : (_remainingSeconds <= 10 && _status == TimerStatus.running
-                        ? const Color(0xFFEF4444)
-                        : Colors.white),
-                shadows: [
-                  Shadow(
-                    color: isOvertime
-                        ? const Color(0xFFEF4444).withValues(alpha: 0.6)
-                        : Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 10,
-                  ),
-                ],
+                color:
+                    isOvertime ||
+                        (_remainingSeconds <= 10 &&
+                            _status == TimerStatus.running)
+                    ? AppColors.primary
+                    : AppColors.textPrimary,
               ),
             ),
           ),
           if (isOvertime) ...[
             const SizedBox(height: 4),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFFDC2626).withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFEF4444)),
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.primary),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.warning_amber_rounded, size: 12, color: Color(0xFFEF4444)),
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 13,
+                    color: AppColors.primary,
+                  ),
                   SizedBox(width: 4),
                   Text(
                     'WAKTU MELEBIHI TARGET (LEWAT)',
                     style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFEF4444),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -507,44 +494,42 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
               ),
             ),
           ],
+          SizedBox(height: isShort ? 5 : 8),
 
-          // Progress Bar
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 7,
-              backgroundColor: const Color(0xFF0F172A),
+              minHeight: 8,
+              backgroundColor: AppColors.surfaceMuted,
               valueColor: AlwaysStoppedAnimation<Color>(
                 isOvertime || _remainingSeconds <= 10
-                    ? const Color(0xFFEF4444)
-                    : const Color(0xFF14B8A6),
+                    ? AppColors.primary
+                    : AppColors.teal,
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: isShort ? 5 : 8),
 
-          // Elapsed time
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               'Waktu Berjalan: ${_formatTime(elapsed)} / Target: ${_formatTime(_selectedMode.durationSeconds)}',
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFF94A3B8),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: AppColors.textSecondary,
                 fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          SizedBox(height: isShort ? 10 : 16),
 
-          // Action Buttons (NO VIBRATION)
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 8,
+            spacing: 10,
             runSpacing: 8,
             children: [
-              // Start / Pause Toggle
               ElevatedButton.icon(
                 onPressed: _status == TimerStatus.running
                     ? _pauseTimer
@@ -553,58 +538,100 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
                   _status == TimerStatus.running
                       ? Icons.pause_rounded
                       : Icons.play_arrow_rounded,
-                  size: 18,
+                  size: 19,
                 ),
                 label: Text(
                   _status == TimerStatus.running ? 'Jeda' : 'Mulai Timer',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _status == TimerStatus.running
-                      ? const Color(0xFFF59E0B)
-                      : const Color(0xFF10B981),
+                      ? AppColors.amber
+                      : AppColors.emerald,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isShort ? 14 : 18,
+                    vertical: isShort ? 8 : 10,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   elevation: 0,
                 ),
               ),
-
-              // Stop Button
               OutlinedButton.icon(
                 onPressed: _status == TimerStatus.standby ? null : _stopTimer,
-                icon: const Icon(Icons.stop_rounded, size: 16),
-                label: const Text('Stop', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.stop_rounded, size: 17),
+                label: const Text(
+                  'Stop',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFEF4444),
-                  side: const BorderSide(color: Color(0xFFDC2626)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  foregroundColor: AppColors.primary,
+                  backgroundColor: AppColors.primarySoft,
+                  side: BorderSide(color: AppColors.primaryBorder),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isShort ? 12 : 14,
+                    vertical: isShort ? 8 : 10,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
-
-              // Reset Button
               OutlinedButton.icon(
                 onPressed: _status == TimerStatus.running ? null : _resetTimer,
-                icon: const Icon(Icons.refresh_rounded, size: 16),
-                label: const Text('Reset', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.refresh_rounded, size: 17),
+                label: const Text(
+                  'Reset',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF94A3B8),
-                  side: const BorderSide(color: Color(0xFF475569)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  foregroundColor: AppColors.textSecondary,
+                  backgroundColor: AppColors.surfaceSoft,
+                  side: BorderSide(color: AppColors.borderStrong),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isShort ? 12 : 14,
+                    vertical: isShort ? 8 : 10,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
             ],
           ),
         ],
+      );
+    }
+
+    return Container(
+      padding: EdgeInsets.all(isCompact ? 14 : 16),
+      decoration: AppDecorations.card(
+        radius: 22,
+        color: isOvertime ? AppColors.primarySoft : AppColors.surface,
+        borderColor: isOvertime ? AppColors.primary : AppColors.border,
+        borderWidth: isOvertime ? 2.0 : 1.0,
       ),
+      child: isCompact
+          ? buildContent(isShort: false)
+          : LayoutBuilder(
+              builder: (context, cardConstraints) {
+                final isShort = cardConstraints.maxHeight < 270;
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: cardConstraints.maxHeight,
+                    ),
+                    child: Center(child: buildContent(isShort: isShort)),
+                  ),
+                );
+              },
+            ),
     );
   }
 
@@ -614,167 +641,200 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
         final isVeryNarrow = constraints.maxWidth < 420;
 
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF334155)),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: AppDecorations.card(radius: 18),
           child: Row(
             children: [
               IconButton(
                 onPressed: widget.onBackToPortal,
                 tooltip: 'Kembali ke Portal',
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 13),
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 padding: EdgeInsets.zero,
                 style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
-                  foregroundColor: const Color(0xFFCBD5E1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  backgroundColor: AppColors.surfaceMuted,
+                  foregroundColor: AppColors.textPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
 
               if (!isVeryNarrow) ...[
                 Container(
-                  width: 26,
-                  height: 26,
-                  padding: const EdgeInsets.all(1.5),
+                  width: 28,
+                  height: 28,
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.4)),
+                    color: AppColors.tealSoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.tealBorder),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
+                    borderRadius: BorderRadius.circular(6),
                     child: Image.asset(
                       'assets/images/app_logo_small.png',
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => const Icon(
                         Icons.timer_rounded,
-                        color: Color(0xFF14B8A6),
+                        color: AppColors.teal,
                         size: 15,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
               ],
 
-              // Synced Athlete & Partai Info (Managed by Dewan)
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          const Flexible(
-                            child: Text(
-                              'Time Keeper',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Time Keeper',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
                             ),
                           ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            _athlete.partai.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        if (!isVeryNarrow) ...[
                           const SizedBox(width: 5),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFDC2626),
-                              borderRadius: BorderRadius.circular(4),
+                              color: AppColors.emeraldSoft,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppColors.emeraldBorder),
                             ),
-                            child: Text(
-                              _athlete.partai.toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.3,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.lock_outline_rounded,
+                                  size: 8.5,
+                                  color: AppColors.emerald,
+                                ),
+                                SizedBox(width: 2),
+                                Text(
+                                  'Dewan Sync',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    color: AppColors.emeraldText,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          if (!isVeryNarrow) ...[
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.lock_outline_rounded, size: 8, color: Color(0xFF10B981)),
-                                  SizedBox(width: 2),
-                                  Text(
-                                    'Dewan Sync',
-                                    style: TextStyle(fontSize: 8, color: Color(0xFF6EE7B7), fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                         ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_athlete.name} (${_athlete.kontingen}) • ${_category.title}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Builder(
+                      builder: (context) {
+                        final evTitle = GelanggangSyncService.instance
+                            .getArenaState(_arenaCode)
+                            .lockedEventTitle;
+                        final evPrefix = evTitle != null && evTitle.isNotEmpty
+                            ? '$evTitle • '
+                            : '';
+                        return Text(
+                          '$evPrefix${_athlete.name} (${_athlete.kontingen}) • ${_category.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
               if (!isVeryNarrow) ...[
                 const SizedBox(width: 6),
-                // Preset Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF334155)),
+                    color: AppColors.skySoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.skyBorder),
+                  ),
+                  child: Text(
+                    '${GelanggangSyncService.instance.getActiveJuriCount(arenaCode: _arenaCode)} Juri',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.skyText,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.tealSoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.tealBorder),
                   ),
                   child: Text(
                     _formatTime(_selectedMode.durationSeconds),
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
                       fontFamily: 'monospace',
-                      color: Color(0xFF14B8A6),
+                      color: AppColors.tealText,
                     ),
                   ),
                 ),
               ],
               const SizedBox(width: 6),
+              const ThemeToggleButton(
+                buttonSize: 30,
+                iconSize: 15,
+                borderRadius: 9,
+              ),
+              const SizedBox(width: 5),
 
-              // Full Screen Toggle Button for Timekeeper
               IconButton(
                 onPressed: _toggleFullScreen,
                 tooltip: _isFullScreen ? 'Keluar Layar Penuh' : 'Layar Penuh Time Keeper',
                 icon: Icon(
                   _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
                   size: 16,
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                 ),
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 padding: EdgeInsets.zero,
                 style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  backgroundColor: AppColors.surfaceMuted,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
                   side: BorderSide(
-                    color: _isFullScreen ? const Color(0xFF14B8A6) : const Color(0xFF334155),
+                    color: _isFullScreen ? AppColors.teal : AppColors.border,
                   ),
                 ),
               ),
@@ -786,29 +846,23 @@ class _TimekeeperPanelViewState extends State<TimekeeperPanelView> {
   }
 
   Color _getStatusColor() {
-    if (_remainingSeconds < 0) {
-      return const Color(0xFFEF4444);
-    }
+    if (_remainingSeconds < 0) return AppColors.primary;
     switch (_status) {
       case TimerStatus.standby:
-        return const Color(0xFF94A3B8);
+        return AppColors.textMuted;
       case TimerStatus.running:
-        return const Color(0xFF10B981);
+        return AppColors.emerald;
       case TimerStatus.paused:
-        return const Color(0xFFF59E0B);
+        return AppColors.amber;
       case TimerStatus.stopped:
-        return const Color(0xFFEF4444);
+        return AppColors.primary;
     }
   }
 
   String _getStatusLabel() {
     if (_remainingSeconds < 0) {
-      if (_status == TimerStatus.paused) {
-        return 'Lewat Waktu (Jeda)';
-      }
-      if (_status == TimerStatus.stopped) {
-        return 'Lewat Waktu (Stop)';
-      }
+      if (_status == TimerStatus.paused) return 'Lewat Waktu (Jeda)';
+      if (_status == TimerStatus.stopped) return 'Lewat Waktu (Stop)';
       return 'Lewat Waktu';
     }
     switch (_status) {

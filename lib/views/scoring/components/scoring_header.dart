@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../models/scoring_models.dart';
+import '../../../theme/app_theme.dart';
 
 class ScoringHeader extends StatelessWidget {
   final String arenaCode;
@@ -19,6 +20,10 @@ class ScoringHeader extends StatelessWidget {
   final String juriStatus; // 'not_ready', 'ready', 'scoring', 'submitted'
   final VoidCallback? onToggleReady;
 
+  // Live Timer synced from Time Keeper
+  final int? timerRemainingSeconds;
+  final String? timerStatus;
+
   const ScoringHeader({
     super.key,
     required this.arenaCode,
@@ -35,34 +40,25 @@ class ScoringHeader extends StatelessWidget {
     this.currentJurusGerakan,
     this.juriStatus = 'ready',
     this.onToggleReady,
+    this.timerRemainingSeconds,
+    this.timerStatus,
   });
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Breakpoint for single row vs edge-to-edge two rows
-        final isCompact = constraints.maxWidth < 920;
+        final isCompact = constraints.maxWidth < 1340;
 
         return Container(
           width: double.infinity,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: const Color(0xFF334155),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+          decoration: AppDecorations.card(
+            radius: 16,
+            borderColor: AppColors.border,
           ),
           padding: EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: isCompact ? 5 : 4,
+            horizontal: 9,
+            vertical: isCompact ? 6 : 5,
           ),
           child: isCompact
               ? _buildCompactTwoRowLayout()
@@ -72,63 +68,49 @@ class ScoringHeader extends StatelessWidget {
     );
   }
 
-  // Wide screen: Single streamlined row
   Widget _buildWideSingleRowLayout() {
     return Row(
       children: [
-        // Navigation Back Button
         _buildBackButton(),
         const SizedBox(width: 5),
-
-        // Arena Badge
         _buildArenaBadge(),
         const SizedBox(width: 5),
-
-        // Locked Juri Badge (No Dropdown)
         _buildLockedJuriBadge(),
         const SizedBox(width: 5),
-
-        // Juri Readiness Badge / Button
         _buildJuriReadinessPill(),
         const SizedBox(width: 5),
-
-        // Category Badge
         _buildCategoryBadge(),
         const SizedBox(width: 6),
-
-        // Synchronized Match/Partai Badge (Managed by Dewan)
-        Expanded(
-          child: _buildSyncedPartaiBadge(),
-        ),
+        Expanded(child: _buildSyncedPartaiBadge()),
         const SizedBox(width: 6),
-
-        // Jurus badge (Baku)
+        if (timerRemainingSeconds != null) ...[
+          _buildLiveTimerBadge(),
+          const SizedBox(width: 5),
+        ],
         if (category.isBaku && currentJurusNumber != null) ...[
           _buildJurusInfoBadge(),
           const SizedBox(width: 5),
         ],
-
-        // Real-time Score Badge
         _buildScoreBadge(),
         const SizedBox(width: 5),
-
-        // Fullscreen toggle
+        const ThemeToggleButton(
+          buttonSize: 28,
+          iconSize: 14,
+          borderRadius: 9,
+        ),
+        const SizedBox(width: 5),
         _buildFullscreenButton(),
         const SizedBox(width: 5),
-
-        // Sync indicator
         _buildSyncDot(),
       ],
     );
   }
 
-  // Compact / Landscape Mobile: Two clean edge-to-edge rows spanning full width
   Widget _buildCompactTwoRowLayout() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Top Row: Controls (Left) ... Fullscreen & Sync (Right)
         Row(
           children: [
             Expanded(
@@ -152,17 +134,21 @@ class ScoringHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
+            const ThemeToggleButton(
+              buttonSize: 28,
+              iconSize: 14,
+              borderRadius: 9,
+            ),
+            const SizedBox(width: 5),
             _buildFullscreenButton(),
             const SizedBox(width: 5),
             _buildSyncDot(),
           ],
         ),
         const SizedBox(height: 5),
-
-        // Bottom Row: Synchronized Partai & Athlete (Left) ... Jurus Info & Score (Right)
         LayoutBuilder(
           builder: (context, rowConstraints) {
-            final isVeryNarrow = rowConstraints.maxWidth < 500;
+            final isVeryNarrow = rowConstraints.maxWidth < 660;
             if (isVeryNarrow) {
               return SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -171,6 +157,10 @@ class ScoringHeader extends StatelessWidget {
                   children: [
                     _buildSyncedPartaiBadge(isCompact: true),
                     const SizedBox(width: 6),
+                    if (timerRemainingSeconds != null) ...[
+                      _buildLiveTimerBadge(),
+                      const SizedBox(width: 6),
+                    ],
                     if (category.isBaku && currentJurusNumber != null) ...[
                       _buildJurusInfoBadge(),
                       const SizedBox(width: 6),
@@ -183,10 +173,12 @@ class ScoringHeader extends StatelessWidget {
 
             return Row(
               children: [
-                Expanded(
-                  child: _buildSyncedPartaiBadge(isCompact: false),
-                ),
+                Expanded(child: _buildSyncedPartaiBadge(isCompact: false)),
                 const SizedBox(width: 6),
+                if (timerRemainingSeconds != null) ...[
+                  _buildLiveTimerBadge(),
+                  const SizedBox(width: 5),
+                ],
                 if (category.isBaku && currentJurusNumber != null) ...[
                   _buildJurusInfoBadge(),
                   const SizedBox(width: 5),
@@ -197,6 +189,76 @@ class ScoringHeader extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildLiveTimerBadge() {
+    final sec = timerRemainingSeconds ?? 180;
+    final st = (timerStatus ?? 'standby').toLowerCase();
+    final bool isOvertime = sec < 0;
+    final int absSec = sec.abs();
+    final int m = absSec ~/ 60;
+    final int s = absSec % 60;
+    final formatted =
+        '${isOvertime ? '-' : ''}${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+
+    Color accent;
+    Color bg;
+    Color border;
+    IconData icon;
+    if (isOvertime || (sec <= 10 && st == 'running')) {
+      accent = AppColors.primary;
+      bg = AppColors.primarySoft;
+      border = AppColors.primaryBorder;
+      icon = Icons.timer_rounded;
+    } else if (st == 'running') {
+      accent = AppColors.emerald;
+      bg = AppColors.emeraldSoft;
+      border = AppColors.emeraldBorder;
+      icon = Icons.play_arrow_rounded;
+    } else if (st == 'paused') {
+      accent = AppColors.amber;
+      bg = AppColors.amberSoft;
+      border = AppColors.amberBorder;
+      icon = Icons.pause_rounded;
+    } else if (st == 'stopped') {
+      accent = AppColors.primaryText;
+      bg = AppColors.primarySoft;
+      border = AppColors.primaryBorder;
+      icon = Icons.stop_rounded;
+    } else {
+      accent = AppColors.tealText;
+      bg = AppColors.tealSoft;
+      border = AppColors.tealBorder;
+      icon = Icons.timer_outlined;
+    }
+
+    return Tooltip(
+      message: 'Waktu tersinkron langsung dari Time Keeper',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: border, width: st == 'running' ? 1.3 : 1.0),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: accent),
+            const SizedBox(width: 3),
+            Text(
+              formatted,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                fontFamily: 'monospace',
+                color: accent,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -212,45 +274,45 @@ class ScoringHeader extends StatelessWidget {
     String label;
 
     if (isNotReady) {
-      bgColor = const Color(0xFFDC2626).withValues(alpha: 0.2);
-      borderColor = const Color(0xFFEF4444);
-      textColor = const Color(0xFFFCA5A5);
+      bgColor = AppColors.primarySoft;
+      borderColor = AppColors.primaryBorder;
+      textColor = AppColors.primaryText;
       icon = Icons.radio_button_checked;
       label = 'READY?';
     } else if (isReady) {
-      bgColor = const Color(0xFF059669).withValues(alpha: 0.25);
-      borderColor = const Color(0xFF10B981);
-      textColor = const Color(0xFF6EE7B7);
+      bgColor = AppColors.emeraldSoft;
+      borderColor = AppColors.emeraldBorder;
+      textColor = AppColors.emeraldText;
       icon = Icons.check_circle_rounded;
       label = 'READY';
     } else if (isScoring) {
-      bgColor = const Color(0xFFB45309).withValues(alpha: 0.25);
-      borderColor = const Color(0xFFF59E0B);
-      textColor = const Color(0xFFFDE68A);
+      bgColor = AppColors.amberSoft;
+      borderColor = AppColors.amberBorder;
+      textColor = AppColors.amberText;
       icon = Icons.edit_note_rounded;
       label = 'MENILAI';
     } else {
-      bgColor = const Color(0xFF0369A1).withValues(alpha: 0.25);
-      borderColor = const Color(0xFF38BDF8);
-      textColor = const Color(0xFFBAE6FD);
+      bgColor = AppColors.skySoft;
+      borderColor = AppColors.skyBorder;
+      textColor = AppColors.skyText;
       icon = Icons.verified_rounded;
       label = 'SELESAI';
     }
 
     return InkWell(
       onTap: onToggleReady,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
         decoration: BoxDecoration(
           color: bgColor,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: borderColor, width: 1.2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1.1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 9, color: textColor),
+            Icon(icon, size: 10, color: textColor),
             const SizedBox(width: 3),
             Text(
               label,
@@ -275,59 +337,70 @@ class ScoringHeader extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
       padding: EdgeInsets.zero,
       style: IconButton.styleFrom(
-        backgroundColor: const Color(0xFF0F172A),
-        foregroundColor: const Color(0xFFCBD5E1),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        backgroundColor: AppColors.surfaceSoft,
+        foregroundColor: AppColors.textPrimary,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        side: BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
       ),
     );
   }
 
   Widget _buildArenaBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFDC2626).withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: const Color(0xFFDC2626).withValues(alpha: 0.4),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 140),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.primaryBorder),
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Image.asset(
-            'assets/images/app_logo_small.png',
-            width: 13,
-            height: 13,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            arenaCode,
-            style: const TextStyle(
-              fontSize: 10,
-              fontFamily: 'monospace',
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFEF4444),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/app_logo_small.png',
+              width: 13,
+              height: 13,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox.shrink(),
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                arenaCode,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryText,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildLockedJuriBadge() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFDC2626),
-        borderRadius: BorderRadius.circular(6),
+        gradient: const LinearGradient(
+          colors: [AppColors.primary, AppColors.primaryDark],
+        ),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFDC2626).withValues(alpha: 0.35),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
+            color: AppColors.primary.withValues(alpha: 0.25),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -352,18 +425,18 @@ class ScoringHeader extends StatelessWidget {
 
   Widget _buildCategoryBadge() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+      decoration: AppDecorations.softTile(
+        radius: 8,
+        color: AppColors.surfaceSoft,
+        borderColor: AppColors.border,
       ),
       child: Text(
         category.title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFFE2E8F0),
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
         ),
       ),
     );
@@ -372,21 +445,20 @@ class ScoringHeader extends StatelessWidget {
   Widget _buildSyncedPartaiBadge({bool isCompact = false}) {
     return Container(
       constraints: isCompact ? const BoxConstraints(maxWidth: 220) : null,
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: AppDecorations.softTile(
+        radius: 10,
+        color: AppColors.surfaceSoft,
+        borderColor: AppColors.border,
       ),
       child: Row(
         mainAxisSize: isCompact ? MainAxisSize.min : MainAxisSize.max,
         children: [
-          // Partai Badge
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
             decoration: BoxDecoration(
-              color: const Color(0xFFDC2626),
-              borderRadius: BorderRadius.circular(4),
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(5),
             ),
             child: Text(
               athlete.partai.toUpperCase(),
@@ -399,13 +471,7 @@ class ScoringHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 5),
-
-          // Athlete Icon & Name
-          const Icon(
-            Icons.person_rounded,
-            size: 13,
-            color: Color(0xFF38BDF8),
-          ),
+          const Icon(Icons.person_rounded, size: 13, color: AppColors.sky),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
@@ -414,36 +480,38 @@ class ScoringHeader extends StatelessWidget {
                   : athlete.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
               ),
             ),
           ),
           const SizedBox(width: 5),
-
-          // Dewan Sync Lock Badge (No Dropdown)
           Tooltip(
             message: 'Partai ditentukan secara terpusat oleh Dewan Pertandingan',
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.5)),
+                color: AppColors.emeraldSoft,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.emeraldBorder),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.lock_outline_rounded, size: 9, color: Color(0xFF10B981)),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 9,
+                    color: AppColors.emerald,
+                  ),
                   SizedBox(width: 2),
                   Text(
                     'Dewan',
                     style: TextStyle(
                       fontSize: 8.5,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF6EE7B7),
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.emeraldText,
                     ),
                   ),
                 ],
@@ -460,37 +528,37 @@ class ScoringHeader extends StatelessWidget {
         ? ' (${currentJurusGerakan}grk)'
         : '';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: AppDecorations.softTile(
+        radius: 9,
+        color: AppColors.surfaceSoft,
+        borderColor: AppColors.border,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'J$currentJurusNumber/$totalJurusInGroup$gerakanStr',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFE2E8F0),
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(width: 3),
-          const Text(
+          const SizedBox(width: 4),
+          Text(
             '|',
-            style: TextStyle(color: Color(0xFF475569), fontSize: 9),
+            style: TextStyle(color: AppColors.borderStrong, fontSize: 9),
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 4),
           Text(
             'X: ${currentJurusMistakes ?? 0}',
             style: TextStyle(
               fontSize: 10,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w800,
               color: (currentJurusMistakes ?? 0) > 0
-                  ? const Color(0xFFEF4444)
-                  : const Color(0xFF94A3B8),
+                  ? AppColors.primary
+                  : AppColors.textMuted,
             ),
           ),
         ],
@@ -500,23 +568,21 @@ class ScoringHeader extends StatelessWidget {
 
   Widget _buildScoreBadge() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
       decoration: BoxDecoration(
-        color: const Color(0xFFDC2626).withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: const Color(0xFFDC2626).withValues(alpha: 0.4),
-        ),
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: AppColors.primaryBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'Skor: ',
             style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFFCA5A5),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryText,
             ),
           ),
           Text(
@@ -525,7 +591,7 @@ class ScoringHeader extends StatelessWidget {
               fontSize: 13,
               fontWeight: FontWeight.w900,
               fontFamily: 'monospace',
-              color: Color(0xFFEF4444),
+              color: AppColors.primary,
             ),
           ),
         ],
@@ -541,12 +607,15 @@ class ScoringHeader extends StatelessWidget {
         isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
         size: 15,
       ),
-      constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
       padding: EdgeInsets.zero,
       style: IconButton.styleFrom(
-        backgroundColor: const Color(0xFF0F172A),
-        foregroundColor: const Color(0xFFCBD5E1),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        backgroundColor: AppColors.surfaceSoft,
+        foregroundColor: AppColors.textSecondary,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        side: BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
       ),
     );
   }
@@ -555,15 +624,15 @@ class ScoringHeader extends StatelessWidget {
     return Tooltip(
       message: 'Sinkron ke Dewan & Server',
       child: Container(
-        width: 7,
-        height: 7,
+        width: 8,
+        height: 8,
         decoration: BoxDecoration(
-          color: const Color(0xFF10B981),
+          color: AppColors.emerald,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF10B981).withValues(alpha: 0.6),
-              blurRadius: 4,
+              color: AppColors.emerald.withValues(alpha: 0.45),
+              blurRadius: 5,
               spreadRadius: 1,
             ),
           ],

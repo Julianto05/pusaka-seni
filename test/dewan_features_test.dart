@@ -14,6 +14,11 @@ void main() {
     setUp(() {
       sync = GelanggangSyncService.instance;
       sync.setActiveJuriCount(8);
+      sync.timekeeperStopTimer();
+      sync.timekeeperSwitchMode(
+        durationSeconds: 180,
+        modeTitle: 'Standar (03:00)',
+      );
     });
 
     test('Dewan can configure active judge count (3, 5, 8) dynamically', () {
@@ -273,6 +278,61 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('SELESAI'), findsOneWidget);     // Juri 3
+    });
+
+    testWidgets('DewanPanelView displays live jurus indicator inside Juri box while scoring',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final samples = AthleteModel.getSampleAthletes();
+      sync.setActiveJuriCount(4);
+      sync.dewanSelectMatch(athlete: samples[0], category: SeniCategory.tunggal);
+
+      // Juri 1 sedang menilai Jurus 3/14 (Tangan kosong), Juri 2 di Jurus 9/14 (Golok)
+      sync.juriStartScoring(
+        juriNumber: 1,
+        currentScore: 9.89,
+        currentJurus: 3,
+        totalJurus: 14,
+        jurusLabel: 'Tangan kosong',
+      );
+      sync.juriStartScoring(
+        juriNumber: 2,
+        currentScore: 9.87,
+        currentJurus: 9,
+        totalJurus: 14,
+        jurusLabel: 'Golok',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DewanPanelView(onBackToPortal: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Jurus 3/14 • T. Kosong'), findsOneWidget);
+      expect(find.text('Jurus 9/14 • Golok'), findsOneWidget);
+
+      // Juri 1 selesai dan mengirim nilai
+      sync.juriSubmitScore(
+        juriNumber: 1,
+        score: 9.94,
+        kebenaran: 9.89,
+        kemantapan: 0.05,
+        currentJurus: 14,
+        totalJurus: 14,
+        jurusLabel: 'Tuntas',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tuntas (14/14)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     test('Timekeeper syncs timer duration, category mode, and status to GelanggangSyncService', () {

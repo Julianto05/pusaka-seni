@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../models/scoring_models.dart';
+import '../../../theme/app_theme.dart';
 import 'modals/confirm_ganda_dialog.dart';
 import 'modals/reset_confirm_dialog.dart';
 
@@ -73,48 +74,49 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
             // Lock Banner if Juri Not Ready
             if (!widget.isJuriReady)
               Container(
-                margin: const EdgeInsets.only(bottom: 6),
+                margin: const EdgeInsets.only(bottom: 7),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
+                  horizontal: 11,
+                  vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF450A0A),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFDC2626)),
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryBorder),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Icon(
                       Icons.lock_rounded,
-                      color: Color(0xFFEF4444),
+                      color: AppColors.primary,
                       size: 14,
                     ),
                     const SizedBox(width: 6),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'PENILAIAN DIKUNCI: Konfirmasi READY terlebih dahulu untuk mulai menilai',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFFFCA5A5),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryText,
                         ),
                       ),
                     ),
                     const SizedBox(width: 6),
                     InkWell(
                       onTap: widget.onRequireReady,
+                      borderRadius: BorderRadius.circular(8),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
+                          horizontal: 9,
+                          vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981),
-                          borderRadius: BorderRadius.circular(6),
+                          color: AppColors.emerald,
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Text(
                           'KLIK READY',
@@ -133,7 +135,7 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
             // If compact screen, show a neat Tab Switcher for the 3 aspects
             if (!isWide) ...[_buildAspectTabBar(), const SizedBox(height: 6)],
 
-            // Main aspect display: 3 columns if wide, active tab card if compact
+            // Main aspect display
             Expanded(
               child: isWide
                   ? Row(
@@ -148,7 +150,7 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                     )
                   : _buildActiveCompactCard(),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
 
             // Bottom bar
             _buildBottomBar(context, totalScore, allFilled),
@@ -161,10 +163,10 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
   Widget _buildAspectTabBar() {
     return Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF334155)),
+      decoration: AppDecorations.card(
+        radius: 14,
+        borderColor: AppColors.border,
+        elevated: false,
       ),
       child: Row(
         children: [
@@ -172,21 +174,21 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
             index: 0,
             label: '1. Serang Bela',
             value: widget.attackDefense,
-            color: const Color(0xFF10B981),
+            color: AppColors.emerald,
           ),
           const SizedBox(width: 4),
           _buildTabItem(
             index: 1,
             label: '2. Kemantapan',
             value: widget.firmnessHarmony,
-            color: const Color(0xFF38BDF8),
+            color: AppColors.sky,
           ),
           const SizedBox(width: 4),
           _buildTabItem(
             index: 2,
             label: '3. Penjiwaan',
             value: widget.soulfulness,
-            color: const Color(0xFFF59E0B),
+            color: AppColors.amber,
           ),
         ],
       ),
@@ -203,15 +205,18 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => _activeAspectTab = index),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           decoration: BoxDecoration(
             color: isSelected
-                ? color.withValues(alpha: 0.2)
+                ? color.withValues(alpha: 0.12)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isSelected ? color : Colors.transparent),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? color : Colors.transparent,
+              width: 1.2,
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -222,8 +227,10 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 10.5,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                  color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
                 ),
               ),
               const SizedBox(height: 1),
@@ -234,12 +241,10 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                 style: TextStyle(
                   fontSize: 10,
                   fontFamily: 'monospace',
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
                   color: value != null
-                      ? (value > 0
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF10B981))
-                      : const Color(0xFF64748B),
+                      ? (value > 0 ? AppColors.primary : AppColors.emerald)
+                      : AppColors.textMuted,
                 ),
               ),
             ],
@@ -267,7 +272,7 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
       title: 'Teknik Serang Bela',
       subtitle: 'Pengurangan Penalti (0.01 - 0.30)',
       value: widget.attackDefense,
-      themeColor: const Color(0xFF10B981),
+      themeColor: AppColors.emerald,
       onSelect: widget.onSelectAttackDefense,
     );
   }
@@ -278,7 +283,7 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
       title: 'Kemantapan & Keselarasan',
       subtitle: 'Pengurangan Penalti (0.01 - 0.30)',
       value: widget.firmnessHarmony,
-      themeColor: const Color(0xFF38BDF8),
+      themeColor: AppColors.sky,
       onSelect: widget.onSelectFirmnessHarmony,
     );
   }
@@ -289,7 +294,7 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
       title: 'Penjiwaan & Karakter',
       subtitle: 'Pengurangan Penalti (0.01 - 0.30)',
       value: widget.soulfulness,
-      themeColor: const Color(0xFFF59E0B),
+      themeColor: AppColors.amber,
       onSelect: widget.onSelectSoulfulness,
     );
   }
@@ -318,17 +323,15 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
       final next = ((value ?? 0.0) + delta).clamp(0.00, 0.30);
       onSelect(double.parse(next.toStringAsFixed(2)));
     }
+
     return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: value != null
-              ? themeColor.withValues(alpha: 0.5)
-              : const Color(0xFF334155),
-          width: value != null ? 1.5 : 1.0,
-        ),
+      padding: const EdgeInsets.all(10),
+      decoration: AppDecorations.card(
+        radius: 18,
+        borderColor: value != null
+            ? themeColor.withValues(alpha: 0.45)
+            : AppColors.border,
+        borderWidth: value != null ? 1.4 : 1.0,
       ),
       child: Column(
         children: [
@@ -336,61 +339,77 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: themeColor.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Center(
-                      child: Text(
-                        stepNumber,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: themeColor,
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: themeColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: themeColor.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          stepNumber,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                            color: themeColor,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 8.5,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 8.5,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 6),
               // Current Value Display
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(6),
+                  color: value != null
+                      ? (value > 0
+                            ? AppColors.primarySoft
+                            : AppColors.emeraldSoft)
+                      : AppColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: value != null
                         ? (value > 0
-                              ? const Color(0xFFEF4444)
-                              : const Color(0xFF10B981))
-                        : const Color(0xFF334155),
+                              ? AppColors.primaryBorder
+                              : AppColors.emeraldBorder)
+                        : AppColors.border,
                   ),
                 ),
                 child: Text(
@@ -399,36 +418,35 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                       : 'Belum',
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w800,
                     fontFamily: 'monospace',
                     color: value != null
                         ? (value > 0
-                              ? const Color(0xFFEF4444)
-                              : const Color(0xFF10B981))
-                        : const Color(0xFF64748B),
+                              ? AppColors.primary
+                              : AppColors.emeraldText)
+                        : AppColors.textMuted,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
 
           // 0.00 Tanpa Penalti Button
           InkWell(
             onTap: () => onChanged(0.0),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 3.5),
+              padding: const EdgeInsets.symmetric(vertical: 4.5),
               decoration: BoxDecoration(
                 color: value == 0.0
-                    ? const Color(0xFF10B981).withValues(alpha: 0.25)
-                    : const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(6),
+                    ? AppColors.emeraldSoft
+                    : AppColors.surfaceSoft,
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: value == 0.0
-                      ? const Color(0xFF10B981)
-                      : const Color(0xFF334155),
+                  color: value == 0.0 ? AppColors.emerald : AppColors.border,
+                  width: value == 0.0 ? 1.3 : 1.0,
                 ),
               ),
               child: Center(
@@ -437,17 +455,17 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: value == 0.0
-                        ? FontWeight.bold
+                        ? FontWeight.w800
                         : FontWeight.w600,
                     color: value == 0.0
-                        ? const Color(0xFF34D399)
-                        : const Color(0xFF94A3B8),
+                        ? AppColors.emeraldText
+                        : AppColors.textSecondary,
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
 
           // 30 Buttons Grid (5 cols x 6 rows)
           Expanded(
@@ -455,8 +473,8 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
               physics: const BouncingScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 5,
-                mainAxisSpacing: 3.5,
-                crossAxisSpacing: 3.5,
+                mainAxisSpacing: 4,
+                crossAxisSpacing: 4,
                 childAspectRatio: 2.1,
               ),
               itemCount: ScoringGandaWidget.values30.length,
@@ -465,26 +483,24 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                 final isSelected = value == v;
 
                 return InkWell(
-                  onTap: () => onChanged(v), // NO VIBRATION
-                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => onChanged(v),
+                  borderRadius: BorderRadius.circular(7),
                   child: Container(
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? const Color(0xFFDC2626)
-                          : const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(6),
+                          ? AppColors.primary
+                          : AppColors.surfaceSoft,
+                      borderRadius: BorderRadius.circular(7),
                       border: Border.all(
                         color: isSelected
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF334155),
+                            ? AppColors.primary
+                            : AppColors.border,
                       ),
                       boxShadow: isSelected
                           ? [
                               BoxShadow(
-                                color: const Color(
-                                  0xFFDC2626,
-                                ).withValues(alpha: 0.35),
-                                blurRadius: 4,
+                                color: AppColors.primary.withValues(alpha: 0.3),
+                                blurRadius: 5,
                               ),
                             ]
                           : null,
@@ -495,12 +511,12 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                         style: TextStyle(
                           fontSize: 9,
                           fontWeight: isSelected
-                              ? FontWeight.bold
+                              ? FontWeight.w800
                               : FontWeight.w600,
                           fontFamily: 'monospace',
                           color: isSelected
                               ? Colors.white
-                              : const Color(0xFFCBD5E1),
+                              : AppColors.textPrimary,
                         ),
                       ),
                     ),
@@ -509,32 +525,37 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
               },
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
 
           // Quick Steppers
           Row(
             children: [
               Expanded(
                 child: InkWell(
-                  onTap: () => onStepChange(-0.01), // NO VIBRATION
-                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => onStepChange(-0.01),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF334155)),
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    decoration: AppDecorations.softTile(
+                      radius: 8,
+                      color: AppColors.surfaceSoft,
+                      borderColor: AppColors.border,
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.remove, size: 12, color: Color(0xFFCBD5E1)),
+                        Icon(
+                          Icons.remove,
+                          size: 12,
+                          color: AppColors.textSecondary,
+                        ),
                         SizedBox(width: 2),
                         Text(
                           '0.01',
                           style: TextStyle(
                             fontSize: 9.5,
-                            color: Color(0xFFCBD5E1),
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -545,28 +566,26 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
               const SizedBox(width: 6),
               Expanded(
                 child: InkWell(
-                  onTap: () => onStepChange(0.01), // NO VIBRATION
-                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => onStepChange(0.01),
+                  borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.4),
-                      ),
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.primaryBorder),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.add, size: 12, color: Color(0xFFEF4444)),
+                        Icon(Icons.add, size: 12, color: AppColors.primary),
                         SizedBox(width: 2),
                         Text(
                           '0.01',
                           style: TextStyle(
                             fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFEF4444),
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primaryText,
                           ),
                         ),
                       ],
@@ -587,45 +606,44 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
     bool allFilled,
   ) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: AppDecorations.card(
+        radius: 15,
+        borderColor: AppColors.border,
+        elevated: false,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left: Formula breakdown (scrollable or compact so it NEVER overflows)
           Flexible(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
               child: Row(
                 children: [
-                  const Text(
+                  Text(
                     'NILAI: ',
                     style: TextStyle(
                       fontSize: 9.5,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF94A3B8),
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textMuted,
                     ),
                   ),
                   Text(
                     ScoringGandaWidget.baseScore.toStringAsFixed(2),
                     style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
                       fontFamily: 'monospace',
-                      color: Color(0xFF10B981),
+                      color: AppColors.emerald,
                     ),
                   ),
                   const Text(
                     ' - ',
                     style: TextStyle(
-                      color: Color(0xFFEF4444),
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
@@ -633,20 +651,20 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                         ? widget.attackDefense!.toStringAsFixed(2)
                         : '0.00',
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
                       fontFamily: 'monospace',
                       color: (widget.attackDefense ?? 0.0) > 0
-                          ? const Color(0xFFFCA5A5)
-                          : const Color(0xFF64748B),
+                          ? AppColors.primary
+                          : AppColors.textMuted,
                     ),
                   ),
                   const Text(
                     ' - ',
                     style: TextStyle(
-                      color: Color(0xFFEF4444),
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
@@ -654,20 +672,20 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                         ? widget.firmnessHarmony!.toStringAsFixed(2)
                         : '0.00',
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
                       fontFamily: 'monospace',
                       color: (widget.firmnessHarmony ?? 0.0) > 0
-                          ? const Color(0xFFFCA5A5)
-                          : const Color(0xFF64748B),
+                          ? AppColors.primary
+                          : AppColors.textMuted,
                     ),
                   ),
                   const Text(
                     ' - ',
                     style: TextStyle(
-                      color: Color(0xFFEF4444),
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
@@ -675,29 +693,29 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                         ? widget.soulfulness!.toStringAsFixed(2)
                         : '0.00',
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
                       fontFamily: 'monospace',
                       color: (widget.soulfulness ?? 0.0) > 0
-                          ? const Color(0xFFFCA5A5)
-                          : const Color(0xFF64748B),
+                          ? AppColors.primary
+                          : AppColors.textMuted,
                     ),
                   ),
-                  const Text(
+                  Text(
                     ' = ',
                     style: TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                      color: AppColors.textMuted,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   Text(
                     totalScore.toStringAsFixed(2),
-                    style: const TextStyle(
-                      fontSize: 14,
+                    style: TextStyle(
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w900,
                       fontFamily: 'monospace',
-                      color: Color(0xFF38BDF8),
+                      color: AppColors.skyText,
                     ),
                   ),
                 ],
@@ -705,8 +723,6 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
             ),
           ),
           const SizedBox(width: 8),
-
-          // Right: Reset & Kirim Nilai
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -727,18 +743,22 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                   );
                 },
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF94A3B8),
-                  side: const BorderSide(color: Color(0xFF334155)),
+                  foregroundColor: AppColors.textSecondary,
+                  side: BorderSide(color: AppColors.borderStrong),
+                  backgroundColor: AppColors.surfaceSoft,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
+                    horizontal: 9,
                     vertical: 4,
                   ),
-                  minimumSize: const Size(48, 28),
+                  minimumSize: const Size(50, 30),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                 ),
-                child: const Text('Reset', style: TextStyle(fontSize: 10.5)),
+                child: const Text(
+                  'Reset',
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700),
+                ),
               ),
               const SizedBox(width: 6),
               ElevatedButton.icon(
@@ -753,7 +773,7 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                         content: Text(
                           'Lengkapi seluruh 3 aspek penilaian (Serang Bela, Kemantapan, Penjiwaan).',
                         ),
-                        backgroundColor: Color(0xFFDC2626),
+                        backgroundColor: AppColors.primary,
                       ),
                     );
                     return;
@@ -775,19 +795,19 @@ class _ScoringGandaWidgetState extends State<ScoringGandaWidget> {
                 icon: const Icon(Icons.send_rounded, size: 12),
                 label: const Text(
                   'Kirim Nilai',
-                  style: TextStyle(fontSize: 10.5),
+                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFDC2626),
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0xFF334155),
+                  disabledBackgroundColor: AppColors.borderStrong,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
+                    horizontal: 11,
                     vertical: 4,
                   ),
-                  minimumSize: const Size(80, 28),
+                  minimumSize: const Size(84, 30),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   elevation: 0,
                 ),

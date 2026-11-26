@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../models/scoring_models.dart';
+import 'platform_env.dart';
 import 'pusaka_seni_api_service.dart';
 
 /// Isolated state for a specific Gelanggang / Arena.
@@ -12,21 +12,34 @@ import 'pusaka_seni_api_service.dart';
 class GelanggangArenaState {
   final String arenaCode;
 
+  // Locked backend identity populated after Gelanggang verification
+  bool isVerified = false;
+  String? lockedGelanggangId;
+  String? lockedGelanggangDocId;
+  String? lockedRawArenaCode;
+  String? lockedEventId;
+  String? lockedEventDocId;
+  String? lockedEventTitle;
+  String? lockedEventCode;
+
   String matchVersion = '';
   late AthleteModel athlete;
   late SeniCategory category;
   String nomorPartai;
   String pool;
 
-  // Live Timer State (Independent timer per arena)
+  // Live Timer State (Independent timer per arena; Timekeeper is sole authority)
   Timer? activeTimer;
+  Timer? timerHeartbeat;
+  bool isTimerAuthority = false;
   int targetDurationSeconds = 180;
   int timerRemainingSeconds = 180;
   String timerStatus = 'standby'; // 'standby', 'running', 'paused', 'stopped'
   String timerModeTitle = 'Standar (03:00)';
 
-  // Active Judges Configuration (3, 4, 5, 8, 10)
+  // Active Judges Configuration (3, 4, 5, 8, 10; Dewan is sole authority)
   int activeJuriCount = 8;
+  bool hasDewanJuriCount = false;
   final Map<int, Map<String, dynamic>> juriScores = {};
 
   // Dewan Penalties & Match Finalization
@@ -62,6 +75,9 @@ class GelanggangArenaState {
         'score': 9.90,
         'kebenaran': 9.90,
         'kemantapan': null,
+        'currentJurus': null,
+        'totalJurus': null,
+        'jurusLabel': null,
         'isReady': false,
         'status': 'not_ready', // 'not_ready', 'ready', 'scoring', 'submitted'
         'submitted': false,
@@ -179,11 +195,7 @@ class GelanggangSyncService extends ChangeNotifier {
 
   static bool _isTestEnvironment() {
     if (kIsWeb) return false;
-    try {
-      return Platform.environment.containsKey('FLUTTER_TEST');
-    } catch (_) {
-      return false;
-    }
+    return isFlutterTestEnvironment();
   }
 
   static String normalizeArenaCode(String code) {
@@ -281,6 +293,13 @@ class GelanggangSyncService extends ChangeNotifier {
   // Active Gelanggang Info
   String get activeArenaCode => _activeArenaCode;
   bool get isGelanggangVerified => _isGelanggangVerified;
+  String? get lockedEventId => currentArenaState.lockedEventId;
+  String? get lockedEventDocId => currentArenaState.lockedEventDocId;
+  String? get lockedEventTitle => currentArenaState.lockedEventTitle;
+  String? get lockedEventCode => currentArenaState.lockedEventCode;
+  String? get lockedGelanggangId => currentArenaState.lockedGelanggangId;
+  String? get lockedGelanggangDocId => currentArenaState.lockedGelanggangDocId;
+  String? get lockedRawArenaCode => currentArenaState.lockedRawArenaCode;
   String? get lastSyncAction => _lastSyncAction;
   String? get lastSyncArenaCode => _lastSyncArenaCode;
   int get selectedJuriNumber => _selectedJuriNumber;
@@ -435,9 +454,14 @@ class GelanggangSyncService extends ChangeNotifier {
     if (_pullInFlight.contains(targetArena)) return;
     _pullInFlight.add(targetArena);
     try {
-      final records = await PusakaSeniApiService().fetchSyncRecords(targetArena);
+      final api = PusakaSeniApiService();
+      final records = await api.fetchSyncRecords(targetArena);
       if (records.isNotEmpty) {
-        applyRemoteSyncRecords(targetArena, records);
+        applyRemoteSyncRecords(
+          targetArena,
+          records,
+          serverNow: api.lastServerTime,
+        );
       }
     } catch (_) {
       // Offline-resilient: continue operating locally until connection returns
@@ -520,6 +544,7 @@ class GelanggangSyncService extends ChangeNotifier {
     GelanggangArenaState state,
     int juriNumber, {
     String? overrideDeviceId,
+    bool forceRelease = false,
   }) {
     final entry = state.juriScores[juriNumber] ?? state._defaultJuriEntry();
     final map = <String, dynamic>{
@@ -529,8 +554,21 @@ class GelanggangSyncService extends ChangeNotifier {
       'kb': double.parse(((entry['kebenaran'] as num?)?.toDouble() ?? 9.90).toStringAsFixed(2)),
       'dev': overrideDeviceId ?? (state.claimedJuriDevices[juriNumber] ?? ''),
     };
+    if (forceRelease) {
+      map['rel'] = 1;
+    }
     if (entry['kemantapan'] != null) {
       map['km'] = double.parse((entry['kemantapan'] as num).toDouble().toStringAsFixed(2));
+    }
+    if (entry['currentJurus'] != null) {
+      map['cj'] = (entry['currentJurus'] as num).toInt();
+    }
+    if (entry['totalJurus'] != null) {
+      map['tj'] = (entry['totalJurus'] as num).toInt();
+    }
+    final jl = entry['jurusLabel']?.toString();
+    if (jl != null && jl.isNotEmpty) {
+      map['jl'] = _truncate(jl, 16);
     }
     return map;
   }
@@ -559,6 +597,19 @@ class GelanggangSyncService extends ChangeNotifier {
     };
   }
 
+  void _pushJuriConfigState(String arenaCode) {
+    final state = _ensureArenaState(arenaCode);
+    _pushSyncKey(
+      arenaCode: arenaCode,
+      topic: 'juri_config',
+      nilai: state.activeJuriCount.toDouble(),
+      payload: {
+        'jc': state.activeJuriCount,
+        'dev': _deviceId,
+      },
+    );
+  }
+
   void _pushMatchState(String arenaCode) {
     final state = _ensureArenaState(arenaCode);
     _pushSyncKey(
@@ -580,10 +631,29 @@ class GelanggangSyncService extends ChangeNotifier {
     );
   }
 
+  void _startTimerHeartbeat(String targetArena, GelanggangArenaState state) {
+    state.timerHeartbeat?.cancel();
+    if (!cloudSyncEnabled) return;
+    state.timerHeartbeat = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (state.timerStatus == 'running' && state.isTimerAuthority) {
+        _pushTimerState(targetArena);
+      } else {
+        state.timerHeartbeat?.cancel();
+        state.timerHeartbeat = null;
+      }
+    });
+  }
+
+  void _stopTimerHeartbeat(GelanggangArenaState state) {
+    state.timerHeartbeat?.cancel();
+    state.timerHeartbeat = null;
+  }
+
   void _pushJuriState(
     String arenaCode,
     int juriNumber, {
     String? overrideDeviceId,
+    bool forceRelease = false,
     Duration? debounce,
   }) {
     final state = _ensureArenaState(arenaCode);
@@ -592,7 +662,12 @@ class GelanggangSyncService extends ChangeNotifier {
       arenaCode: arenaCode,
       topic: 'juri|$juriNumber',
       nilai: score,
-      payload: _buildJuriPayload(state, juriNumber, overrideDeviceId: overrideDeviceId),
+      payload: _buildJuriPayload(
+        state,
+        juriNumber,
+        overrideDeviceId: overrideDeviceId,
+        forceRelease: forceRelease,
+      ),
       debounce: debounce,
     );
   }
@@ -617,7 +692,11 @@ class GelanggangSyncService extends ChangeNotifier {
 
   /// Merges a batch of remote sync records fetched from Strapi into [arenaCode].
   /// Exposed so cross-device synchronization can also be thoroughly unit-tested.
-  void applyRemoteSyncRecords(String arenaCode, List<Map<String, dynamic>> records) {
+  void applyRemoteSyncRecords(
+    String arenaCode,
+    List<Map<String, dynamic>> records, {
+    DateTime? serverNow,
+  }) {
     final targetArena = normalizeArenaCode(arenaCode);
     final state = _ensureArenaState(targetArena);
     final prefix = 'sync|$targetArena|';
@@ -647,7 +726,7 @@ class GelanggangSyncService extends ChangeNotifier {
     bool changed = false;
     String emittedAction = 'CLOUD_SYNC_UPDATED';
 
-    // 1. Apply claims_reset first if newer
+    // 1. Apply claims_reset first if newer (resets claims & sets all judges back to not_ready)
     final claimsResetKey = _syncKey(targetArena, 'claims_reset');
     if (latestByKey.containsKey(claimsResetKey)) {
       final rev = revByKey[claimsResetKey] ?? 0;
@@ -655,7 +734,33 @@ class GelanggangSyncService extends ChangeNotifier {
         state.claimsResetRevision = rev;
         state.keyRevisions[claimsResetKey] = rev;
         state.clearClaimedJudges();
+        state._initJuriScores();
+        state.juriOngoingSessions.clear();
+        emittedAction = 'JURI_CLAIMS_CLEARED';
         changed = true;
+      }
+    }
+
+    // 1b. Apply dedicated Dewan activeJuriCount config if newer
+    final juriConfigKey = _syncKey(targetArena, 'juri_config');
+    int appliedJuriConfigRev = state.keyRevisions[juriConfigKey] ?? 0;
+    if (latestByKey.containsKey(juriConfigKey)) {
+      final rec = latestByKey[juriConfigKey]!;
+      final rev = revByKey[juriConfigKey] ?? 0;
+      if (rev > appliedJuriConfigRev) {
+        final data = _decodePayload(rec['keterangan']?.toString());
+        final remoteCount = (data?['jc'] as num?)?.toInt() ??
+            (rec['nilai'] as num?)?.toInt();
+        if (remoteCount != null && remoteCount >= 1 && remoteCount <= 10) {
+          state.keyRevisions[juriConfigKey] = rev;
+          appliedJuriConfigRev = rev;
+          state.hasDewanJuriCount = true;
+          if (state.activeJuriCount != remoteCount) {
+            state.setActiveJuriCount(remoteCount);
+            emittedAction = 'JURI_COUNT_CHANGED';
+            changed = true;
+          }
+        }
       }
     }
 
@@ -693,10 +798,15 @@ class GelanggangSyncService extends ChangeNotifier {
           final remoteFinalScore =
               (data['fs'] as num?)?.toDouble() ?? (rec['nilai'] as num?)?.toDouble() ?? 0.0;
 
-          if (remoteJuriCount != state.activeJuriCount) {
-            state.setActiveJuriCount(remoteJuriCount);
+          // Respect dedicated Dewan juri_config if it is newer than match
+          if (rev >= appliedJuriConfigRev) {
+            state.hasDewanJuriCount = true;
+            if (remoteJuriCount != state.activeJuriCount) {
+              state.setActiveJuriCount(remoteJuriCount);
+            }
           }
 
+          final wasFinalized = state.isMatchFinalized;
           if (isNewMatch) {
             state.matchVersion = remoteMk;
             state.athlete = remoteAthlete;
@@ -719,6 +829,9 @@ class GelanggangSyncService extends ChangeNotifier {
             state.pool = remotePool;
             state.isMatchFinalized = remoteFinalized;
             state.officialFinalScore = remoteFinalScore;
+            if (remoteFinalized && !wasFinalized) {
+              emittedAction = 'MATCH_FINALIZED';
+            }
           }
 
           if (remoteFinalized) {
@@ -729,7 +842,7 @@ class GelanggangSyncService extends ChangeNotifier {
       }
     }
 
-    // 3. Apply timer record
+    // 3. Apply timer record (Timekeeper is sole authoritative source of time)
     final timerKey = _syncKey(targetArena, 'timer');
     if (latestByKey.containsKey(timerKey)) {
       final rec = latestByKey[timerKey]!;
@@ -739,6 +852,12 @@ class GelanggangSyncService extends ChangeNotifier {
         final data = _decodePayload(rec['keterangan']?.toString());
         if (data != null) {
           state.keyRevisions[timerKey] = rev;
+          final remoteDev = data['dev']?.toString() ?? '';
+          if (remoteDev.isNotEmpty && remoteDev != _deviceId) {
+            state.isTimerAuthority = false;
+            _stopTimerHeartbeat(state);
+          }
+
           final st = data['st']?.toString() ?? 'standby';
           final rem = (data['rem'] as num?)?.toInt() ??
               (rec['nilai'] as num?)?.toInt() ??
@@ -752,8 +871,20 @@ class GelanggangSyncService extends ChangeNotifier {
           state.timerStatus = st;
 
           if (st == 'running') {
-            final nowMs = DateTime.now().millisecondsSinceEpoch;
-            final elapsedSec = math.max(0, ((nowMs - at) / 1000).round());
+            int elapsedSec = 0;
+            final updatedAtRaw = rec['updatedAt']?.toString();
+            final remoteServerUpdatedAt =
+                updatedAtRaw != null ? DateTime.tryParse(updatedAtRaw)?.toUtc() : null;
+            if (serverNow != null && remoteServerUpdatedAt != null) {
+              // Clock-skew-free delta using Strapi's own server clock
+              elapsedSec = math.max(
+                0,
+                serverNow.toUtc().difference(remoteServerUpdatedAt).inSeconds,
+              );
+            } else {
+              final nowMs = DateTime.now().millisecondsSinceEpoch;
+              elapsedSec = math.max(0, ((nowMs - at) / 1000).round());
+            }
             state.timerRemainingSeconds = rem - elapsedSec;
             _startLocalDisplayTimer(targetArena, state);
           } else {
@@ -840,7 +971,17 @@ class GelanggangSyncService extends ChangeNotifier {
       // Apply judge device claim (if newer than claimsResetRevision)
       if (rev > state.claimsResetRevision) {
         final remoteDev = data['dev']?.toString() ?? '';
-        if (remoteDev.isNotEmpty) {
+        final forceRelease = data['rel'] == 1 || data['rel'] == true;
+        if (forceRelease) {
+          state.claimedJuriDevices.remove(juriNum);
+          state.juriScores[juriNum] = state._defaultJuriEntry();
+          state.juriOngoingSessions.remove(juriNum);
+          if (emittedAction == 'CLOUD_SYNC_UPDATED') {
+            emittedAction = 'JURI_CLAIM_RELEASED';
+          }
+          changed = true;
+          continue;
+        } else if (remoteDev.isNotEmpty) {
           state.claimedJuriDevices[juriNum] = remoteDev;
         } else if (state.claimedJuriDevices[juriNum] != _deviceId) {
           state.claimedJuriDevices.remove(juriNum);
@@ -856,11 +997,17 @@ class GelanggangSyncService extends ChangeNotifier {
         final remoteScore = (rec['nilai'] as num?)?.toDouble() ?? 9.90;
         final remoteKebenaran = (data['kb'] as num?)?.toDouble() ?? remoteScore;
         final remoteKemantapan = (data['km'] as num?)?.toDouble();
+        final remoteCurrentJurus = (data['cj'] as num?)?.toInt();
+        final remoteTotalJurus = (data['tj'] as num?)?.toInt();
+        final remoteJurusLabel = data['jl']?.toString();
 
         state.juriScores[juriNum] = {
           'score': remoteScore,
           'kebenaran': remoteKebenaran,
           'kemantapan': remoteKemantapan,
+          'currentJurus': remoteCurrentJurus,
+          'totalJurus': remoteTotalJurus,
+          'jurusLabel': remoteJurusLabel,
           'isReady': remoteStatus != 'not_ready',
           'status': remoteStatus,
           'submitted': remoteSub,
@@ -903,13 +1050,69 @@ class GelanggangSyncService extends ChangeNotifier {
   // ===========================================================================
 
   /// 1. Verifikasi Gelanggang (from 8-digit code or QR Scan)
-  void verifyGelanggang({required String arenaCode}) {
+  /// Locks the verified Gelanggang & Event ID so all panels display the
+  /// verified event title and fetch athletes strictly for this arena/event.
+  void verifyGelanggang({
+    required String arenaCode,
+    String? rawArenaCode,
+    String? gelanggangId,
+    String? gelanggangDocId,
+    String? eventId,
+    String? eventDocId,
+    String? eventTitle,
+    String? eventCode,
+    int? jumlahJuri,
+  }) {
     final normalized = normalizeArenaCode(arenaCode);
     _activeArenaCode = normalized;
     _isGelanggangVerified = true;
-    _ensureArenaState(normalized);
+    final state = _ensureArenaState(normalized);
+    state.isVerified = true;
+    if (rawArenaCode != null && rawArenaCode.trim().isNotEmpty) {
+      state.lockedRawArenaCode = rawArenaCode.trim();
+    }
+    if (gelanggangId != null && gelanggangId.trim().isNotEmpty) {
+      state.lockedGelanggangId = gelanggangId.trim();
+    }
+    if (gelanggangDocId != null && gelanggangDocId.trim().isNotEmpty) {
+      state.lockedGelanggangDocId = gelanggangDocId.trim();
+    }
+    if (eventId != null && eventId.trim().isNotEmpty) {
+      state.lockedEventId = eventId.trim();
+    }
+    if (eventDocId != null && eventDocId.trim().isNotEmpty) {
+      state.lockedEventDocId = eventDocId.trim();
+    }
+    if (eventTitle != null && eventTitle.trim().isNotEmpty) {
+      state.lockedEventTitle = eventTitle.trim();
+    }
+    if (eventCode != null && eventCode.trim().isNotEmpty) {
+      state.lockedEventCode = eventCode.trim();
+    }
+    if (!state.hasDewanJuriCount &&
+        jumlahJuri != null &&
+        jumlahJuri >= 1 &&
+        jumlahJuri <= 10) {
+      state.setActiveJuriCount(jumlahJuri);
+    }
     _emitSync('GELANGGANG_VERIFIED', normalized);
     unawaited(pullArenaSync(normalized));
+  }
+
+  /// Resets verification lock (useful when switching event or in tests).
+  void resetVerification({String? arenaCode}) {
+    _isGelanggangVerified = false;
+    final state = _resolveState(arenaCode);
+    state.isVerified = false;
+    state.hasDewanJuriCount = false;
+    state.lockedGelanggangId = null;
+    state.lockedGelanggangDocId = null;
+    state.lockedRawArenaCode = null;
+    state.lockedEventId = null;
+    state.lockedEventDocId = null;
+    state.lockedEventTitle = null;
+    state.lockedEventCode = null;
+    _emitSync('GELANGGANG_RESET', state.arenaCode);
   }
 
   /// 2. Dewan Memilih Partai / Atlet (Master Sync: Hanya juri, monitor, timekeeper gelanggang ini yang berubah)
@@ -931,15 +1134,19 @@ class GelanggangSyncService extends ChangeNotifier {
     state.pool = pool ?? athlete.pool;
     state.activeTimer?.cancel();
     state.activeTimer = null;
-    state.targetDurationSeconds = targetDuration ?? 180;
-    state.timerRemainingSeconds = state.targetDurationSeconds;
-    if (state.targetDurationSeconds == 80) {
-      state.timerModeTitle = 'Tangan Kosong (01:20)';
-    } else if (state.targetDurationSeconds == 100) {
-      state.timerModeTitle = 'Senjata (01:40)';
-    } else {
-      state.timerModeTitle = 'Standar (03:00)';
+    _stopTimerHeartbeat(state);
+    // Preserve Timekeeper's active mode duration unless explicitly overridden
+    if (targetDuration != null) {
+      state.targetDurationSeconds = targetDuration;
+      if (state.targetDurationSeconds == 80) {
+        state.timerModeTitle = 'Tangan Kosong (01:20)';
+      } else if (state.targetDurationSeconds == 100) {
+        state.timerModeTitle = 'Senjata (01:40)';
+      } else {
+        state.timerModeTitle = 'Standar (03:00)';
+      }
     }
+    state.timerRemainingSeconds = state.targetDurationSeconds;
     state.timerStatus = 'standby';
     state.isMatchFinalized = isAthleteCompleted(athlete, arenaCode: targetArena);
     state.officialFinalScore = state.finalizedAthletes[athlete.documentId] ?? 0.0;
@@ -990,11 +1197,39 @@ class GelanggangSyncService extends ChangeNotifier {
     _emitSync('JURI_CLAIMED', targetArena);
   }
 
-  /// Reset semua klaim juri di arena tertentu
+  /// Cek apakah slot juri sedang diklaim oleh suatu perangkat
+  bool isJuriClaimed(int juriNumber, {String? arenaCode}) {
+    final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
+    final state = _ensureArenaState(targetArena);
+    final dev = state.claimedJuriDevices[juriNumber];
+    return dev != null && dev.isNotEmpty;
+  }
+
+  /// Reset / buka kunci 1 slot juri tertentu oleh Dewan agar perangkat baru bisa masuk
+  /// dan status juri otomatis kembali menjadi Belum Ready (`not_ready`).
+  void releaseJuriClaim(int juriNumber, {String? arenaCode}) {
+    final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
+    final state = _ensureArenaState(targetArena);
+    state.claimedJuriDevices.remove(juriNumber);
+    state.juriScores[juriNumber] = state._defaultJuriEntry();
+    state.juriOngoingSessions.remove(juriNumber);
+    _pushJuriState(
+      targetArena,
+      juriNumber,
+      overrideDeviceId: '',
+      forceRelease: true,
+    );
+    _emitSync('JURI_CLAIM_RELEASED', targetArena);
+  }
+
+  /// Reset semua klaim juri di arena tertentu dan kembalikan status seluruh juri
+  /// secara otomatis menjadi Belum Ready (`not_ready`).
   void clearClaimedJudges({String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
     state.clearClaimedJudges();
+    state._initJuriScores();
+    state.juriOngoingSessions.clear();
     state.claimsResetRevision = _nextRevisionMs();
     _pushSyncKey(
       arenaCode: targetArena,
@@ -1057,6 +1292,9 @@ class GelanggangSyncService extends ChangeNotifier {
   void juriStartScoring({
     required int juriNumber,
     double? currentScore,
+    int? currentJurus,
+    int? totalJurus,
+    String? jurusLabel,
     String? arenaCode,
   }) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
@@ -1066,6 +1304,9 @@ class GelanggangSyncService extends ChangeNotifier {
     state.juriScores[juriNumber] = {
       ...current,
       'score': currentScore ?? current['score'] ?? 9.90,
+      'currentJurus': currentJurus ?? current['currentJurus'],
+      'totalJurus': totalJurus ?? current['totalJurus'],
+      'jurusLabel': jurusLabel ?? current['jurusLabel'],
       'isReady': true,
       'status': 'scoring',
     };
@@ -1083,20 +1324,41 @@ class GelanggangSyncService extends ChangeNotifier {
     required double score,
     double? kebenaran,
     double? kemantapan,
+    int? currentJurus,
+    int? totalJurus,
+    String? jurusLabel,
     String? arenaCode,
   }) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
+    final current = state.juriScores[juriNumber] ?? {};
     state.juriScores[juriNumber] = {
       'score': score,
       'kebenaran': kebenaran ?? score,
       'kemantapan': kemantapan,
+      'currentJurus': currentJurus ?? current['currentJurus'],
+      'totalJurus': totalJurus ?? current['totalJurus'],
+      'jurusLabel': jurusLabel ?? current['jurusLabel'],
       'isReady': true,
       'status': 'submitted',
       'submitted': true,
       'updatedAt': DateTime.now().toIso8601String(),
     };
     _pushJuriState(targetArena, juriNumber);
+    if (cloudSyncEnabled && state.athlete.documentId.isNotEmpty) {
+      final keterangan = kemantapan != null
+          ? 'Nilai Akhir Baku (Kebenaran: ${(kebenaran ?? score).toStringAsFixed(2)}, Kemantapan: +${kemantapan.toStringAsFixed(2)})'
+          : 'Nilai Akhir Juri $juriNumber';
+      unawaited(
+        PusakaSeniApiService().postScore(
+          athleteDocId: state.athlete.documentId,
+          poolDocId: state.athlete.poolDocId,
+          penilai: 'juri $juriNumber',
+          nilai: score,
+          keterangan: keterangan,
+        ),
+      );
+    }
     _emitSync('JURI_SCORE_UPDATED', targetArena);
   }
 
@@ -1104,9 +1366,11 @@ class GelanggangSyncService extends ChangeNotifier {
   void timekeeperStartTimer({String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
+    state.isTimerAuthority = true;
     state.timerStatus = 'running';
 
     _startLocalDisplayTimer(targetArena, state);
+    _startTimerHeartbeat(targetArena, state);
     _pushTimerState(targetArena);
     _emitSync('TIMEKEEPER_TIMER_SYNC', targetArena);
   }
@@ -1115,8 +1379,10 @@ class GelanggangSyncService extends ChangeNotifier {
   void timekeeperPauseTimer({String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
+    state.isTimerAuthority = true;
     state.activeTimer?.cancel();
     state.activeTimer = null;
+    _stopTimerHeartbeat(state);
     state.timerStatus = 'paused';
     _pushTimerState(targetArena);
     _emitSync('TIMEKEEPER_TIMER_SYNC', targetArena);
@@ -1126,8 +1392,10 @@ class GelanggangSyncService extends ChangeNotifier {
   void timekeeperStopTimer({String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
+    state.isTimerAuthority = true;
     state.activeTimer?.cancel();
     state.activeTimer = null;
+    _stopTimerHeartbeat(state);
     state.timerStatus = 'stopped';
     _pushTimerState(targetArena);
     _emitSync('TIMEKEEPER_TIMER_SYNC', targetArena);
@@ -1137,8 +1405,10 @@ class GelanggangSyncService extends ChangeNotifier {
   void timekeeperResetTimer({String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
+    state.isTimerAuthority = true;
     state.activeTimer?.cancel();
     state.activeTimer = null;
+    _stopTimerHeartbeat(state);
     state.timerRemainingSeconds = state.targetDurationSeconds;
     state.timerStatus = 'standby';
     _pushTimerState(targetArena);
@@ -1154,8 +1424,10 @@ class GelanggangSyncService extends ChangeNotifier {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
     if (state.timerStatus == 'running') return;
+    state.isTimerAuthority = true;
     state.activeTimer?.cancel();
     state.activeTimer = null;
+    _stopTimerHeartbeat(state);
     state.targetDurationSeconds = durationSeconds;
     state.timerRemainingSeconds = durationSeconds;
     state.timerModeTitle = modeTitle;
@@ -1164,7 +1436,7 @@ class GelanggangSyncService extends ChangeNotifier {
     _emitSync('TIMEKEEPER_TIMER_SYNC', targetArena);
   }
 
-  /// Timekeeper sinkronisasi timer ke Dewan & Scoreboard
+  /// Timekeeper sinkronisasi timer ke Dewan, Juri & Scoreboard
   void timekeeperSyncTimer({
     required int remainingSeconds,
     required String status,
@@ -1174,6 +1446,7 @@ class GelanggangSyncService extends ChangeNotifier {
   }) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
+    state.isTimerAuthority = true;
     state.timerRemainingSeconds = remainingSeconds;
     state.timerStatus = status;
     if (targetDurationSeconds != null) {
@@ -1187,9 +1460,11 @@ class GelanggangSyncService extends ChangeNotifier {
         timekeeperStartTimer(arenaCode: targetArena);
         return;
       }
+      _startTimerHeartbeat(targetArena, state);
     } else {
       state.activeTimer?.cancel();
       state.activeTimer = null;
+      _stopTimerHeartbeat(state);
     }
     _pushTimerState(targetArena);
     _emitSync('TIMEKEEPER_TIMER_SYNC', targetArena);
@@ -1198,8 +1473,20 @@ class GelanggangSyncService extends ChangeNotifier {
   /// 6. Dewan input hukuman
   void dewanAddPenalty(PenaltyDeduction penalty, {String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
-    _ensureArenaState(targetArena).penalties.add(penalty);
+    final state = _ensureArenaState(targetArena);
+    state.penalties.add(penalty);
     _pushPenaltiesState(targetArena);
+    if (cloudSyncEnabled && state.athlete.documentId.isNotEmpty) {
+      unawaited(
+        PusakaSeniApiService().postScore(
+          athleteDocId: state.athlete.documentId,
+          poolDocId: state.athlete.poolDocId,
+          penilai: 'dewan',
+          nilai: -penalty.deduction,
+          keterangan: 'Hukuman Dewan: ${penalty.label}',
+        ),
+      );
+    }
     _emitSync('DEWAN_PENALTY_ADDED', targetArena);
   }
 
@@ -1215,9 +1502,13 @@ class GelanggangSyncService extends ChangeNotifier {
   }
 
   /// 8. Dewan mengatur jumlah juri yang bertugas (3, 4, 5, 8, atau 10)
+  /// Dewan adalah otoritas utama; semua perangkat (Juri, Timekeeper, Monitoring) sinkron ke sini.
   void setActiveJuriCount(int count, {String? arenaCode}) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
-    _ensureArenaState(targetArena).setActiveJuriCount(count);
+    final state = _ensureArenaState(targetArena);
+    state.hasDewanJuriCount = true;
+    state.setActiveJuriCount(count);
+    _pushJuriConfigState(targetArena);
     _pushMatchState(targetArena);
     _emitSync('JURI_COUNT_CHANGED', targetArena);
   }
@@ -1230,6 +1521,26 @@ class GelanggangSyncService extends ChangeNotifier {
     state.officialFinalScore = officialScore;
     _recordFinalizedAthlete(state, officialScore);
     _pushMatchState(targetArena);
+    if (cloudSyncEnabled && state.athlete.documentId.isNotEmpty) {
+      final nilaiJuriMap = <String, double>{};
+      for (int i = 1; i <= state.activeJuriCount; i++) {
+        final s = (state.juriScores[i]?['score'] as num?)?.toDouble() ?? 9.90;
+        nilaiJuriMap['juri $i'] = double.parse(s.toStringAsFixed(2));
+      }
+      final int elapsed = math.max(0, state.targetDurationSeconds - state.timerRemainingSeconds);
+      final String akurasiWaktu =
+          '${(elapsed ~/ 60).toString().padLeft(2, '0')}:${(elapsed % 60).toString().padLeft(2, '0')}';
+      unawaited(
+        PusakaSeniApiService().postScoreAkhir(
+          athleteDocId: state.athlete.documentId,
+          poolDocId: state.athlete.poolDocId,
+          nilaiJuri: nilaiJuriMap,
+          standarDeviasi: state.calculateStandardDeviation(),
+          akumulasi: officialScore,
+          akurasiWaktu: akurasiWaktu,
+        ),
+      );
+    }
     _emitSync('MATCH_FINALIZED', targetArena);
   }
 }

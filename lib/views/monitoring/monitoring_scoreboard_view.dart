@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/link.dart';
 import '../../models/scoring_models.dart';
+import '../../services/app_link_helper.dart';
 import '../../services/gelanggang_sync_service.dart';
+import '../../theme/app_theme.dart';
 
 class MonitoringScoreboardView extends StatefulWidget {
   final VoidCallback onBackToPortal;
@@ -24,6 +27,7 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
   late AthleteModel _athlete;
   late SeniCategory _category;
 
+  String _eventTitle = 'PAPAN SKOR PUSAKA SENI IPSI';
   int _timeRemaining = 180;
   int _targetDuration = 180;
   String _timerStatus = 'standby';
@@ -60,15 +64,17 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
       return;
     }
     if (mounted) {
-      setState(() {
-        _syncFromGelanggangService();
-      });
+      setState(() => _syncFromGelanggangService());
     }
   }
 
   void _syncFromGelanggangService() {
     final sync = GelanggangSyncService.instance;
     final state = sync.getArenaState(_arenaCode);
+    final lockedTitle = state.lockedEventTitle?.trim();
+    _eventTitle = (lockedTitle != null && lockedTitle.isNotEmpty)
+        ? lockedTitle.toUpperCase()
+        : 'PAPAN SKOR PUSAKA SENI IPSI';
     _athlete = state.athlete;
     _category = state.category;
     _timeRemaining = state.timerRemainingSeconds;
@@ -108,30 +114,24 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
   bool get _isOvertime => _timeRemaining < 0;
 
   Color _getTimerStatusColor() {
-    if (_isOvertime) {
-      return const Color(0xFFEF4444);
-    }
+    if (_isOvertime) return AppColors.primary;
     switch (_timerStatus.toLowerCase()) {
       case 'running':
-        return const Color(0xFF10B981);
+        return AppColors.emerald;
       case 'paused':
-        return const Color(0xFFF59E0B);
+        return AppColors.amber;
       case 'stopped':
-        return const Color(0xFFEF4444);
+        return AppColors.primary;
       case 'standby':
       default:
-        return const Color(0xFF94A3B8);
+        return AppColors.textMuted;
     }
   }
 
   String _getTimerStatusLabel() {
     if (_isOvertime) {
-      if (_timerStatus.toLowerCase() == 'paused') {
-        return 'LEWAT (JEDA)';
-      }
-      if (_timerStatus.toLowerCase() == 'stopped') {
-        return 'LEWAT (SELESAI)';
-      }
+      if (_timerStatus.toLowerCase() == 'paused') return 'LEWAT (JEDA)';
+      if (_timerStatus.toLowerCase() == 'stopped') return 'LEWAT (SELESAI)';
       return 'LEWAT WAKTU';
     }
     switch (_timerStatus.toLowerCase()) {
@@ -157,7 +157,6 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
   }
 
   String _formatTimePerformance() {
-    // If timer hasn't started yet, show 00 : 00
     if ((_timerStatus == 'standby' || _timerStatus == 'stopped') &&
         _timeRemaining == _targetDuration) {
       return '00 : 00';
@@ -187,21 +186,17 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 7, vertical: 1.5),
+        padding: EdgeInsets.symmetric(horizontal: compact ? 5 : 8, vertical: 2),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.7), width: 1),
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.45)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              _getTimerStatusIcon(),
-              size: compact ? 8 : 11,
-              color: color,
-            ),
-            const SizedBox(width: 2.5),
+            Icon(_getTimerStatusIcon(), size: compact ? 9 : 11, color: color),
+            const SizedBox(width: 3),
             Text(
               label,
               style: TextStyle(
@@ -219,75 +214,68 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF071228),
-      body: SafeArea(
-        top: !_isFullScreen,
-        bottom: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: _isFullScreen ? 6 : 10,
-            vertical: _isFullScreen ? 4 : 8,
-          ),
-          child: Column(
-            children: [
-              // Unobtrusive Top Bar with controls & tournament info
-              _buildTopBar(),
-              SizedBox(height: _isFullScreen ? 4 : 6),
-
-              // Responsive Audience Display Board
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isLandscape = constraints.maxWidth >= 600 && constraints.maxHeight >= 280;
-
-                    if (isLandscape) {
-                      return _buildWideScoreboard(constraints);
-                    } else {
+    return ListenableBuilder(
+      listenable: AppThemeController.instance,
+      builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
+      body: Container(
+        decoration: AppDecorations.pageBackground,
+        child: SafeArea(
+          top: !_isFullScreen,
+          bottom: false,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: _isFullScreen ? 8 : 12,
+              vertical: _isFullScreen ? 6 : 8,
+            ),
+            child: Column(
+              children: [
+                _buildTopBar(),
+                SizedBox(height: _isFullScreen ? 5 : 8),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isLandscape =
+                          constraints.maxWidth >= 600 && constraints.maxHeight >= 280;
+                      if (isLandscape) {
+                        return _buildWideScoreboard(constraints);
+                      }
                       return _buildCompactScoreboard();
-                    }
-                  },
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
+    ),
     );
   }
 
-  /// Wide TV / Landscape Layout (Original Photo Styling with Juri on Top & Total Score on Left)
   Widget _buildWideScoreboard(BoxConstraints constraints) {
     final bool isCompactHeight = constraints.maxHeight < 360;
+    final double gap = isCompactHeight ? 6 : 10;
 
     return Column(
       children: [
-        // 1. Athlete Split Bar (Left: Kontingen [Blue], Right: Nama Atlet [Navy]) - NO ICONS
         _buildAthleteSplitBar(compact: isCompactHeight),
-        SizedBox(height: isCompactHeight ? 5 : 8),
-
-        // 2. Juri Cards Row DI ATAS (Above the Scoreboard Main Area)
+        SizedBox(height: gap),
         _buildJuriCardsRow(isScrollable: false),
-        SizedBox(height: isCompactHeight ? 5 : 8),
-
-        // 3. Scoreboard Main Area: Left (Total Score) vs Right (Median, Penalty, Time, StdDev)
+        SizedBox(height: gap),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Left Column (flex 9): Total Score Card (diletakan di kirinya)
               Expanded(
                 flex: 9,
                 child: _buildTotalScoreCard(compact: isCompactHeight),
               ),
-              SizedBox(width: isCompactHeight ? 5 : 8),
-
-              // Right Column (flex 11): 3 top metrics + Standard Deviation below
+              SizedBox(width: gap),
               Expanded(
                 flex: 11,
                 child: Column(
                   children: [
-                    // Top Row: Median, Penalty, Time Performance
                     Expanded(
                       flex: 5,
                       child: Row(
@@ -299,14 +287,14 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                               value: _medianJuri.toStringAsFixed(3),
                             ),
                           ),
-                          SizedBox(width: isCompactHeight ? 5 : 8),
+                          SizedBox(width: gap),
                           Expanded(
                             child: _buildMetricBox(
                               label: 'PENALTY',
                               value: _dewanPenalties.toStringAsFixed(2),
                             ),
                           ),
-                          SizedBox(width: isCompactHeight ? 5 : 8),
+                          SizedBox(width: gap),
                           Expanded(
                             child: _buildMetricBox(
                               label: 'TIME PERFORMANCE',
@@ -319,9 +307,7 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                         ],
                       ),
                     ),
-                    SizedBox(height: isCompactHeight ? 5 : 8),
-
-                    // Bottom Row: Standard Deviation (wide box across all 3 columns)
+                    SizedBox(height: gap),
                     Expanded(
                       flex: 5,
                       child: _buildMetricBox(
@@ -340,28 +326,18 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     );
   }
 
-  /// Compact Mobile Portrait / Small Screen Layout
   Widget _buildCompactScoreboard() {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Column(
         children: [
-          // Athlete Split Bar
           _buildAthleteSplitBar(compact: true),
           const SizedBox(height: 8),
-
-          // Juri Score Cards DI ATAS
           _buildJuriCardsRow(isScrollable: true),
           const SizedBox(height: 8),
-
-          // Total Score Box
-          SizedBox(
-            height: 120,
-            child: _buildTotalScoreCard(compact: true),
-          ),
+          SizedBox(height: 122, child: _buildTotalScoreCard(compact: true)),
           const SizedBox(height: 8),
-
-          // 3 Metric Cards Row
           Row(
             children: [
               Expanded(
@@ -392,9 +368,7 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-
-          // Standard Deviation Card
+          const SizedBox(height: 8),
           _buildMetricBox(
             label: 'STANDARD DEVIATION',
             value: _standardDeviation.toStringAsFixed(9),
@@ -406,7 +380,6 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     );
   }
 
-  /// Metric Box with Cyan/Green header pill (Warning Red on overtime) and dark blue body
   Widget _buildMetricBox({
     required String label,
     required String value,
@@ -416,11 +389,11 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     String? subtitle,
     bool isOvertime = false,
   }) {
-    final Color headerBgColor = isOvertime ? const Color(0xFFDC2626) : const Color(0xFF00DF89);
-    final Color headerTextColor = isOvertime ? Colors.white : const Color(0xFF064E3B);
-    final Color boxBgColor = isOvertime ? const Color(0xFF2A0A0A) : const Color(0xFF0B2146);
-    final Color borderColor = isOvertime ? const Color(0xFFEF4444) : const Color(0xFF00DF89).withValues(alpha: 0.7);
-    final Color valueColor = isOvertime ? const Color(0xFFFCA5A5) : Colors.white;
+    final Color headerBgColor = isOvertime ? AppColors.primary : AppColors.emeraldSoft;
+    final Color headerTextColor = isOvertime ? Colors.white : AppColors.emeraldText;
+    final Color boxBgColor = isOvertime ? AppColors.primarySoft : AppColors.surface;
+    final Color borderColor = isOvertime ? AppColors.primary : AppColors.emeraldBorder;
+    final Color valueColor = isOvertime ? AppColors.primaryText : AppColors.textPrimary;
 
     final valueContent = FittedBox(
       fit: BoxFit.scaleDown,
@@ -450,7 +423,7 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
               style: TextStyle(
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
-                color: isOvertime ? const Color(0xFFFCA5A5).withValues(alpha: 0.8) : const Color(0xFF94A3B8),
+                color: isOvertime ? AppColors.primary : AppColors.textMuted,
               ),
             ),
           ],
@@ -459,43 +432,26 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     );
 
     return Container(
-      decoration: BoxDecoration(
+      decoration: AppDecorations.card(
+        radius: 16,
         color: boxBgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: borderColor,
-          width: isOvertime ? 1.8 : 1.2,
-        ),
-        boxShadow: isOvertime
-            ? [
-                BoxShadow(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
+        borderColor: borderColor,
+        borderWidth: isOvertime ? 1.8 : 1.2,
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Bar (Red on overtime, Cyan-Green default)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 3.5, horizontal: 6),
-            decoration: BoxDecoration(
-              color: headerBgColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(6.8),
-                topRight: Radius.circular(6.8),
-              ),
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+            color: headerBgColor,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
                 label,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 10.5,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 0.6,
                   color: headerTextColor,
@@ -503,15 +459,10 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
               ),
             ),
           ),
-
-          // Numeric Value Display
           if (compact)
             Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 6,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 child: valueContent,
               ),
             )
@@ -519,10 +470,7 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
             Expanded(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   child: valueContent,
                 ),
               ),
@@ -532,38 +480,31 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     );
   }
 
-  /// Large Total Score Card with cream header and massive score number (NO ICON, NO KETERANGAN)
   Widget _buildTotalScoreCard({bool compact = false}) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0A2B5C), // Rich deep blue from photo
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: const Color(0xFF38BDF8),
-          width: 1.5,
+        gradient: const LinearGradient(
+          colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        boxShadow: [
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0xFF1D4ED8).withValues(alpha: 0.35),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Color(0x282563EB),
+            blurRadius: 18,
+            offset: Offset(0, 8),
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Cream / Soft Gold Header Bar (NO ICON)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFEF08A), // Cream/yellow bar from photo
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(8.5),
-                topRight: Radius.circular(8.5),
-              ),
-            ),
-            child: const FittedBox(
+            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+            color: const Color(0xFFFEF08A),
+            child: FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
                 'TOTAL SCORE',
@@ -572,19 +513,17 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                   fontSize: 13,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.2,
-                  color: Color(0xFF0F172A),
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
           ),
-
-          // Massive Score Digits (NO extra formula text)
           Expanded(
             child: Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 6 : 10,
-                  vertical: compact ? 2 : 4,
+                  horizontal: compact ? 6 : 12,
+                  vertical: compact ? 2 : 6,
                 ),
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
@@ -597,12 +536,6 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                       fontFamily: 'monospace',
                       color: Colors.white,
                       letterSpacing: 2.0,
-                      shadows: const [
-                        Shadow(
-                          color: Color(0xFF38BDF8),
-                          blurRadius: 18,
-                        ),
-                      ],
                     ),
                   ),
                 ),
@@ -614,25 +547,20 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     );
   }
 
-  /// Split Athlete Bar (Left: Kontingen [Blue], Right: Nama Atlet [Navy]) - NO ICONS
   Widget _buildAthleteSplitBar({bool compact = false}) {
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF1E3A8A)),
-      ),
+      decoration: AppDecorations.card(radius: 16, borderColor: AppColors.blueBorder),
       clipBehavior: Clip.antiAlias,
       child: Row(
         children: [
-          // Left: Kontingen (PAPUA BARAT in photo) - NO ICON
           Expanded(
             flex: 5,
             child: Container(
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 8 : 14,
-                vertical: compact ? 5 : 8,
+                horizontal: compact ? 10 : 16,
+                vertical: compact ? 6 : 9,
               ),
-              color: const Color(0xFF1D4ED8), // Royal Blue
+              color: AppColors.blue,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
@@ -641,23 +569,21 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                   style: TextStyle(
                     fontSize: compact ? 12 : 14,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
+                    letterSpacing: 0.9,
                     color: Colors.white,
                   ),
                 ),
               ),
             ),
           ),
-
-          // Right: Athlete Name (SAITAMA in photo) - NO ICON
           Expanded(
             flex: 6,
             child: Container(
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 8 : 14,
-                vertical: compact ? 5 : 8,
+                horizontal: compact ? 10 : 16,
+                vertical: compact ? 6 : 9,
               ),
-              color: const Color(0xFF0B192C), // Dark Navy
+              color: AppColors.surface,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
@@ -666,8 +592,8 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                   style: TextStyle(
                     fontSize: compact ? 12 : 14,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 1.0,
-                    color: Colors.white,
+                    letterSpacing: 0.9,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),
@@ -678,8 +604,6 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
     );
   }
 
-  /// Row of Individual Judge Score Cards DI ATAS
-  /// Indikator warna untuk status Ready / Belum Ready TANPA keterangan teks
   Widget _buildJuriCardsRow({bool isScrollable = false}) {
     final sync = GelanggangSyncService.instance;
 
@@ -689,30 +613,26 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
       final bool isSubmitted = j['submitted'] == true;
       final bool isReady = sync.isJuriReady(num, arenaCode: _arenaCode);
 
-      // Indikator status posisi Juri dengan WARNA tanpa keterangan teks:
-      // Hijau jika Ready / Submitted, Merah jika Belum Ready
       final bool isPositive = isSubmitted || isReady;
-      final Color headerColor = isPositive ? const Color(0xFF059669) : const Color(0xFFDC2626);
-      final Color bodyColor = isPositive ? const Color(0xFF064E3B) : const Color(0xFF450A0A);
-      final Color borderColor = isPositive ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+      final Color headerColor = isPositive ? AppColors.emerald : AppColors.primary;
+      final Color bodyColor = isPositive ? AppColors.emeraldSoft : AppColors.primarySoft;
+      final Color borderColor = isPositive ? AppColors.emeraldBorder : AppColors.primaryBorder;
+      final Color scoreColor = isPositive ? AppColors.emeraldText : AppColors.primaryText;
 
       final cardWidget = Container(
         margin: const EdgeInsets.symmetric(horizontal: 3),
         decoration: BoxDecoration(
           color: bodyColor,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: borderColor.withValues(alpha: 0.9),
-            width: 1.2,
-          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor, width: 1.3),
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Juri Header Pill with Color Indicator (NO TEXT KETERANGAN)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 3.5, horizontal: 4),
               color: headerColor,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
@@ -720,13 +640,12 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Dot indikator warna status juri
                     Container(
                       width: 6,
                       height: 6,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: isPositive ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -744,20 +663,18 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                 ),
               ),
             ),
-
-            // Juri Score Display (NO TEXT KETERANGAN)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 5),
+              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 6),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
                   score.toStringAsFixed(2),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w900,
                     fontFamily: 'monospace',
-                    color: Colors.white,
+                    color: scoreColor,
                   ),
                 ),
               ),
@@ -767,10 +684,9 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
       );
 
       if (isScrollable) {
-        return SizedBox(width: 85, child: cardWidget);
-      } else {
-        return Expanded(child: cardWidget);
+        return SizedBox(width: 88, child: cardWidget);
       }
+      return Expanded(child: cardWidget);
     }).toList();
 
     if (isScrollable) {
@@ -779,31 +695,25 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
         physics: const BouncingScrollPhysics(),
         child: Row(children: cards),
       );
-    } else {
-      return Row(children: cards);
     }
+    return Row(children: cards);
   }
 
-  /// Top Bar with tournament name, match details, back & fullscreen controls
   Widget _buildTopBar() {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: _isFullScreen ? 3 : 5,
+        horizontal: 10,
+        vertical: _isFullScreen ? 4 : 6,
       ),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0B192C),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF1E3A8A)),
-      ),
+      decoration: AppDecorations.card(radius: 16),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isVeryNarrow = constraints.maxWidth < 480;
           final isCompact = constraints.maxWidth < 680;
+          final timerColor = _getTimerStatusColor();
 
           return Row(
             children: [
-              // Back Button
               IconButton(
                 onPressed: widget.onBackToPortal,
                 tooltip: 'Kembali ke Portal',
@@ -811,55 +721,54 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 padding: EdgeInsets.zero,
                 style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
-                  foregroundColor: const Color(0xFFCBD5E1),
+                  backgroundColor: AppColors.surfaceMuted,
+                  foregroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
 
               if (!isVeryNarrow) ...[
                 Container(
-                  width: 26,
-                  height: 26,
-                  padding: const EdgeInsets.all(1.5),
+                  width: 28,
+                  height: 28,
+                  padding: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.4)),
+                    color: AppColors.blueSoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.blueBorder),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
+                    borderRadius: BorderRadius.circular(6),
                     child: Image.asset(
                       'assets/images/app_logo_small.png',
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => const Icon(
                         Icons.tv_rounded,
-                        color: Color(0xFF60A5FA),
+                        color: AppColors.blue,
                         size: 15,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
               ],
 
-              // Center: Tournament Title & Match Partai info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const FittedBox(
+                    FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'KEJUARAAN NASIONAL PENCAK SILAT AMPANA OPEN 2026',
+                        _eventTitle,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
-                          color: Color(0xFFFACC15), // Gold/Yellow from photo
+                          letterSpacing: 0.8,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                     ),
@@ -869,50 +778,45 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                       child: Text(
                         '${_athlete.partai} - ${_category.title.toUpperCase()} • ${_athlete.pool.toUpperCase()}',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 0.6,
-                          color: Color(0xFFCBD5E1),
+                          letterSpacing: 0.5,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
 
-              // Time Keeper Synced Timer Badge in Top Bar
               Container(
-                constraints: BoxConstraints(maxWidth: isVeryNarrow ? 95 : 140),
+                constraints: BoxConstraints(maxWidth: isVeryNarrow ? 95 : 145),
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: _getTimerStatusColor().withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                      color: timerColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: _getTimerStatusColor().withValues(alpha: 0.6),
+                        color: timerColor.withValues(alpha: 0.5),
                         width: _timerStatus == 'running' ? 1.4 : 1.0,
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          _getTimerStatusIcon(),
-                          size: 11,
-                          color: _getTimerStatusColor(),
-                        ),
+                        Icon(_getTimerStatusIcon(), size: 11, color: timerColor),
                         const SizedBox(width: 3),
                         Text(
                           '${_formatCountdown()} • ${_getTimerStatusLabel()}',
                           style: TextStyle(
-                            fontSize: 9,
+                            fontSize: 9.5,
                             fontWeight: FontWeight.bold,
                             fontFamily: 'monospace',
-                            color: _getTimerStatusColor(),
+                            color: timerColor,
                           ),
                         ),
                       ],
@@ -920,21 +824,20 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 5),
 
-              // Live Status Badge
               if (!isCompact) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.5)),
+                    color: AppColors.emeraldSoft,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.emeraldBorder),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.circle, size: 6, color: Color(0xFF10B981)),
+                      Icon(Icons.circle, size: 6, color: AppColors.emerald),
                       SizedBox(width: 4),
                       Text(
                         'LIVE',
@@ -942,38 +845,90 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                           fontSize: 9,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'monospace',
-                          color: Color(0xFF34D399),
+                          color: AppColors.emeraldText,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
               ],
 
-              // Arena Code Badge
               if (!isVeryNarrow) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1D4ED8).withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.4)),
+                    color: AppColors.blueSoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.blueBorder),
                   ),
                   child: Text(
                     _arenaCode,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 9,
                       fontFamily: 'monospace',
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF60A5FA),
+                      color: AppColors.blueText,
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
               ],
 
-              // Full Screen Toggle Button
+              if (AppLinkHelper.supportsNewTab && !isCompact) ...[
+                Builder(
+                  builder: (context) {
+                    final arenaParam =
+                        GelanggangSyncService.instance
+                            .getArenaState(_arenaCode)
+                            .lockedRawArenaCode ??
+                        _arenaCode;
+                    final monUri = AppLinkHelper.buildRoleUri(
+                      role: 'monitoring',
+                      arenaCode: arenaParam,
+                    );
+                    return Link(
+                      uri: monUri,
+                      target: LinkTarget.blank,
+                      builder: (context, _) => IconButton(
+                        onPressed: () => AppLinkHelper.openRoleInNewTab(
+                          role: 'monitoring',
+                          arenaCode: arenaParam,
+                        ),
+                        tooltip: 'Buka Scoreboard di Tab Baru',
+                        icon: const Icon(
+                          Icons.open_in_new_rounded,
+                          size: 14,
+                          color: AppColors.blue,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        padding: EdgeInsets.zero,
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppColors.blueSoft,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          side: BorderSide(color: AppColors.blueBorder),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 5),
+              ],
+
+              const ThemeToggleButton(
+                buttonSize: 28,
+                iconSize: 15,
+                borderRadius: 8,
+              ),
+              const SizedBox(width: 5),
+
               IconButton(
                 onPressed: _toggleFullScreen,
                 tooltip: _isFullScreen ? 'Keluar Layar Penuh' : 'Layar Penuh Display',
@@ -984,8 +939,8 @@ class _MonitoringScoreboardViewState extends State<MonitoringScoreboardView> {
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 padding: EdgeInsets.zero,
                 style: IconButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F172A),
-                  foregroundColor: const Color(0xFFCBD5E1),
+                  backgroundColor: AppColors.surfaceMuted,
+                  foregroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),

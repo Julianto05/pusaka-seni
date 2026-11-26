@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/link.dart';
+import '../../services/app_link_helper.dart';
+import '../../services/gelanggang_sync_service.dart';
 import '../../services/pusaka_seni_api_service.dart';
+import '../../theme/app_theme.dart';
 
 class ScoringPortalView extends StatefulWidget {
   final VoidCallback onSelectDewan;
@@ -22,35 +26,47 @@ class ScoringPortalView extends StatefulWidget {
 
 class _ScoringPortalViewState extends State<ScoringPortalView> {
   bool _isFullScreen = false;
-  bool _isLoadingData = true;
-
-  // Live Server Data
-  String _eventTitle = 'KEJUARAAN PENCAK SILAT';
-  String _eventCode = 'ABT-87645';
-  int _totalPeserta = 25;
-  int _activeArenas = 2;
+  bool _isLoadingData = false;
+  int _arenaPesertaCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadLiveTournamentData();
+    GelanggangSyncService.instance.addListener(_handleSyncUpdate);
+    if (GelanggangSyncService.instance.isGelanggangVerified) {
+      _loadVerifiedArenaData();
+    }
   }
 
-  Future<void> _loadLiveTournamentData() async {
+  @override
+  void dispose() {
+    GelanggangSyncService.instance.removeListener(_handleSyncUpdate);
+    super.dispose();
+  }
+
+  void _handleSyncUpdate() {
+    if (!mounted) return;
+    setState(() {});
+    if (GelanggangSyncService.instance.isGelanggangVerified &&
+        GelanggangSyncService.instance.lastSyncAction == 'GELANGGANG_VERIFIED') {
+      _loadVerifiedArenaData();
+    }
+  }
+
+  Future<void> _loadVerifiedArenaData() async {
+    final sync = GelanggangSyncService.instance;
+    if (!sync.isGelanggangVerified) return;
     setState(() => _isLoadingData = true);
     try {
-      final event = await PusakaSeniApiService().fetchActiveEvent();
-      final pesertas = await PusakaSeniApiService().fetchPesertas();
-      final gelanggangs = await PusakaSeniApiService().fetchGelanggangs();
-
+      final pesertas = await PusakaSeniApiService().fetchPesertas(
+        eventId: sync.lockedEventId,
+        eventDocId: sync.lockedEventDocId,
+        gelanggangDocId: sync.lockedGelanggangDocId,
+        rawArenaCode: sync.lockedRawArenaCode,
+      );
       if (mounted) {
         setState(() {
-          if (event != null) {
-            _eventTitle = event['event_title']?.toString() ?? 'KEJUARAAN PENCAK SILAT';
-            _eventCode = event['event_code']?.toString() ?? 'LIVE';
-          }
-          _totalPeserta = pesertas.length;
-          _activeArenas = gelanggangs.length;
+          _arenaPesertaCount = pesertas.length;
           _isLoadingData = false;
         });
       }
@@ -70,69 +86,81 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      body: SafeArea(
-        top: !_isFullScreen,
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            children: [
-              // 1. Top Header Bar
-              _buildTopBar(),
-              const SizedBox(height: 8),
+    return ListenableBuilder(
+      listenable: AppThemeController.instance,
+      builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
+      body: Container(
+        decoration: AppDecorations.pageBackground,
+        child: SafeArea(
+          top: !_isFullScreen,
+          bottom: false,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  children: [
+                    // 1. Clean Top Header Bar
+                    _buildTopBar(),
+                    const SizedBox(height: 10),
 
-              // 2. Live Tournament Status Bar (Data from API)
-              _buildLiveStatusBar(),
-              const SizedBox(height: 10),
+                    // 2. Live Tournament Status Bar (Synced from Backend)
+                    _buildLiveStatusBar(),
+                    const SizedBox(height: 12),
 
-              // 3. 4 Module Cards Grid / List (Fully Responsive)
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth > 860;
-                    final isMedium = constraints.maxWidth > 560;
-                    final roleCards = _buildRoleCards();
+                    // 3. 4 Module Cards Grid / List (Soft & Responsive)
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isWide = constraints.maxWidth > 860;
+                          final isMedium = constraints.maxWidth > 560;
+                          final roleCards = _buildRoleCards();
 
-                    if (!isMedium) {
-                      // Small Mobile Screen: ListView ensures ZERO OVERFLOW
-                      return ListView.separated(
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: roleCards.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (_, index) => roleCards[index],
-                      );
-                    }
+                          if (!isMedium) {
+                            return ListView.separated(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 12),
+                              itemCount: roleCards.length,
+                              separatorBuilder: (_, _) => const SizedBox(height: 12),
+                              itemBuilder: (_, index) => roleCards[index],
+                            );
+                          }
 
-                    // Tablet / Desktop Grid
-                    return GridView.count(
-                      crossAxisCount: isWide ? 4 : 2,
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
-                      childAspectRatio: isWide ? 0.70 : 0.92,
-                      physics: const BouncingScrollPhysics(),
-                      children: roleCards,
-                    );
-                  },
+                          return GridView.count(
+                            crossAxisCount: isWide ? 4 : 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: isWide ? 0.72 : 0.96,
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 12),
+                            children: roleCards,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
+    ),
     );
   }
 
   List<Widget> _buildRoleCards() {
     return [
       _buildRoleCard(
+        roleKey: 'dewan',
         badgeText: 'Otoritas',
-        badgeBg: const Color(0xFF450A0A),
-        badgeBorder: const Color(0xFF991B1B),
-        badgeTextColor: const Color(0xFFFCA5A5),
+        badgeBg: AppColors.primarySoft,
+        badgeBorder: AppColors.primaryBorder,
+        badgeTextColor: AppColors.primaryText,
         icon: Icons.shield_rounded,
-        iconGradient: const [Color(0xFFDC2626), Color(0xFF991B1B)],
+        iconGradient: const [Color(0xFFEF4444), Color(0xFFDC2626)],
         title: 'Dewan Pertandingan',
         subtitle: 'Ketua & Pengawas Partai',
         description:
@@ -142,17 +170,18 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
           'Input Hukuman Dewan',
           'Pengesahan & Penetapan Juara',
         ],
-        accentColor: const Color(0xFFDC2626),
+        accentColor: AppColors.primary,
         actionLabel: 'Masuk Dewan',
         onTap: widget.onSelectDewan,
       ),
       _buildRoleCard(
+        roleKey: 'juri',
         badgeText: 'Penilai',
-        badgeBg: const Color(0xFF451A03),
-        badgeBorder: const Color(0xFFB45309),
-        badgeTextColor: const Color(0xFFFDE68A),
+        badgeBg: AppColors.amberSoft,
+        badgeBorder: AppColors.amberBorder,
+        badgeTextColor: AppColors.amberText,
         icon: Icons.balance_rounded,
-        iconGradient: const [Color(0xFFD97706), Color(0xFFB45309)],
+        iconGradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
         title: 'Juri Pertandingan',
         subtitle: 'Juri 1 s/d Juri 8',
         description:
@@ -162,17 +191,18 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
           'Seni Baku 14 & 12 Jurus',
           '3 Aspek Penilaian Seni Ganda',
         ],
-        accentColor: const Color(0xFFF59E0B),
+        accentColor: AppColors.amber,
         actionLabel: 'Masuk Juri',
         onTap: widget.onSelectJuri,
       ),
       _buildRoleCard(
+        roleKey: 'timekeeper',
         badgeText: 'Waktu',
-        badgeBg: const Color(0xFF042F2E),
-        badgeBorder: const Color(0xFF0F766E),
-        badgeTextColor: const Color(0xFF99F6E4),
+        badgeBg: AppColors.tealSoft,
+        badgeBorder: AppColors.tealBorder,
+        badgeTextColor: AppColors.tealText,
         icon: Icons.timer_rounded,
-        iconGradient: const [Color(0xFF0D9488), Color(0xFF047857)],
+        iconGradient: const [Color(0xFF14B8A6), Color(0xFF0D9488)],
         title: 'Time Keeper',
         subtitle: 'Pengendali Timer Global',
         description:
@@ -182,17 +212,18 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
           'Countdown & Waktu Berjalan',
           'Peringatan 10 Detik Terakhir',
         ],
-        accentColor: const Color(0xFF14B8A6),
+        accentColor: AppColors.teal,
         actionLabel: 'Masuk Time Keeper',
         onTap: widget.onSelectTimekeeper,
       ),
       _buildRoleCard(
+        roleKey: 'monitoring',
         badgeText: 'Display',
-        badgeBg: const Color(0xFF172554),
-        badgeBorder: const Color(0xFF1D4ED8),
-        badgeTextColor: const Color(0xFFBFDBFE),
+        badgeBg: AppColors.blueSoft,
+        badgeBorder: AppColors.blueBorder,
+        badgeTextColor: AppColors.blueText,
         icon: Icons.tv_rounded,
-        iconGradient: const [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+        iconGradient: const [Color(0xFF3B82F6), Color(0xFF2563EB)],
         title: 'Monitoring Scoreboard',
         subtitle: 'Display Penonton & Arena',
         description:
@@ -202,7 +233,7 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
           'Status Multi-Juri Real-Time',
           'Skor Resmi Akhir & Penalti',
         ],
-        accentColor: const Color(0xFF3B82F6),
+        accentColor: AppColors.blue,
         actionLabel: 'Masuk Monitoring',
         onTap: widget.onSelectMonitoring,
       ),
@@ -210,24 +241,98 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
   }
 
   Widget _buildLiveStatusBar() {
+    final sync = GelanggangSyncService.instance;
+    final bool isVerified = sync.isGelanggangVerified;
+    final String? eventTitle = sync.lockedEventTitle;
+    final String? eventCode = sync.lockedEventCode;
+
+    if (!isVerified) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: AppDecorations.card(
+          radius: 16,
+          color: AppColors.surface,
+          borderColor: AppColors.border,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.amberSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.amberBorder),
+              ),
+              child: const Icon(
+                Icons.lock_outline_rounded,
+                color: AppColors.amber,
+                size: 15,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Pilih peran dan verifikasi kode gelanggang untuk mengunci event & daftar atlet',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.amberSoft,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.amberBorder),
+              ),
+              child: Text(
+                'Belum Verifikasi',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.amberText,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final String eventDisplay = eventTitle != null && eventTitle.isNotEmpty
+        ? (eventCode != null && eventCode.isNotEmpty
+            ? '$eventTitle ($eventCode)'
+            : eventTitle)
+        : 'Gelanggang Terverifikasi';
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF334155)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: AppDecorations.card(
+        radius: 16,
+        color: AppColors.surface,
+        borderColor: AppColors.emeraldBorder,
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
+              color: AppColors.emeraldSoft,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.emeraldBorder),
             ),
-            child: const Icon(Icons.cloud_done_rounded, color: Color(0xFF10B981), size: 14),
+            child: const Icon(
+              Icons.verified_rounded,
+              color: AppColors.emerald,
+              size: 15,
+            ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -235,63 +340,73 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
               child: Row(
                 children: [
                   Text(
-                    '$_eventTitle ($_eventCode)',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                    eventDisplay,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFF334155)),
+                      color: AppColors.emeraldSoft,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.emeraldBorder),
                     ),
                     child: Text(
-                      '$_totalPeserta Peserta',
-                      style: const TextStyle(
+                      sync.activeArenaCode,
+                      style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF38BDF8),
+                        color: AppColors.emeraldText,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFF334155)),
-                    ),
-                    child: Text(
-                      '$_activeArenas Gelanggang',
-                      style: const TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF10B981),
+                  if (_arenaPesertaCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.skySoft,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.skyBorder),
+                      ),
+                      child: Text(
+                        '$_arenaPesertaCount Peserta',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.skyText,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
           ),
+          const SizedBox(width: 6),
           IconButton(
-            onPressed: _loadLiveTournamentData,
-            tooltip: 'Segarkan data dari server',
+            onPressed: _loadVerifiedArenaData,
+            tooltip: 'Segarkan data gelanggang',
             icon: _isLoadingData
                 ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.sky,
+                    ),
                   )
-                : const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF38BDF8)),
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                : const Icon(Icons.refresh_rounded, size: 16, color: AppColors.sky),
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             padding: EdgeInsets.zero,
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.skySoft,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+            ),
           ),
         ],
       ),
@@ -300,49 +415,34 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
 
   Widget _buildTopBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFF334155),
-        ),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: AppDecorations.card(radius: 18),
       child: Row(
         children: [
           Container(
-            width: 34,
-            height: 34,
-            padding: const EdgeInsets.all(2),
+            width: 38,
+            height: 38,
+            padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.5)),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
-                  blurRadius: 6,
-                  offset: const Offset(0, 1),
-                ),
-              ],
+              color: AppColors.amberSoft,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.amberBorder),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(8),
               child: Image.asset(
                 'assets/images/app_logo_small.png',
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) => const Icon(
                   Icons.sports_martial_arts_rounded,
-                  color: Color(0xFFF59E0B),
+                  color: AppColors.amber,
                   size: 20,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
-
-          // Portal Title
-          const Expanded(
+          const SizedBox(width: 10),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -352,10 +452,10 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8,
-                    color: Colors.white,
+                    letterSpacing: 0.6,
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 Text(
@@ -363,31 +463,35 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 9.5,
-                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
+                    color: AppColors.textMuted,
                   ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 6),
-
-          // Fullscreen Toggle Button
+          const ThemeToggleButton(
+            buttonSize: 32,
+            iconSize: 17,
+            borderRadius: 10,
+          ),
+          const SizedBox(width: 6),
           IconButton(
             onPressed: _toggleFullScreen,
             icon: Icon(
               _isFullScreen
                   ? Icons.fullscreen_exit_rounded
                   : Icons.fullscreen_rounded,
-              size: 16,
-              color: const Color(0xFFCBD5E1),
+              size: 18,
+              color: AppColors.textSecondary,
             ),
             tooltip: 'Layar Penuh',
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             padding: EdgeInsets.zero,
             style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              backgroundColor: AppColors.surfaceMuted,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
         ],
@@ -396,6 +500,7 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
   }
 
   Widget _buildRoleCard({
+    required String roleKey,
     required String badgeText,
     required Color badgeBg,
     required Color badgeBorder,
@@ -410,146 +515,225 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
     required String actionLabel,
     required VoidCallback onTap,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFF334155),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header Card (Badge & Icon)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: iconGradient,
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: Colors.white, size: 20),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: badgeBg,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: badgeBorder),
-                ),
-                child: Text(
-                  badgeText.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.6,
-                    color: badgeTextColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+    final sync = GelanggangSyncService.instance;
+    final String? verifiedArenaParam = sync.isGelanggangVerified
+        ? (sync.lockedRawArenaCode ?? sync.activeArenaCode)
+        : null;
+    final Uri roleUri = AppLinkHelper.buildRoleUri(
+      role: roleKey,
+      arenaCode: verifiedArenaParam,
+    );
 
-          // Titles
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: accentColor,
-            ),
-          ),
-          const SizedBox(height: 6),
-
-          // Description
-          Text(
-            description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10.5,
-              color: Color(0xFF94A3B8),
-              height: 1.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Checkpoints
-          ...checkpoints.map((cp) => Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle_rounded, size: 12, color: accentColor),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        cp,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFFCBD5E1),
+    return Link(
+      uri: roleUri,
+      target: LinkTarget.self,
+      builder: (context, followLink) {
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              decoration: AppDecorations.card(radius: 22),
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header Card (Icon & Soft Pill Badge)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: iconGradient,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(13),
+                          boxShadow: [
+                            BoxShadow(
+                              color: accentColor.withValues(alpha: 0.25),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(icon, color: Colors.white, size: 21),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: badgeBorder),
+                        ),
+                        child: Text(
+                          badgeText.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                            color: badgeTextColor,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              )),
-          const SizedBox(height: 10),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
 
-          // Action Button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: onTap,
-              icon: const Icon(Icons.arrow_forward_rounded, size: 14),
-              label: Text(
-                actionLabel,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: accentColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
+                  // Titles
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: accentColor,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Description
+                  Text(
+                    description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textSecondary,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Checkpoints
+                  ...checkpoints.map(
+                    (cp) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 13,
+                            color: accentColor,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              cp,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Soft Pill Action Button + Open in New Tab (Chrome & Windows)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: onTap,
+                          icon: const Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 15,
+                          ),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              actionLabel,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accentColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                              horizontal: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                      if (AppLinkHelper.supportsNewTab) ...[
+                        const SizedBox(width: 6),
+                        Link(
+                          uri: roleUri,
+                          target: LinkTarget.blank,
+                          builder: (context, openNewTabLink) => Tooltip(
+                            message: 'Buka $title di Tab Baru',
+                            child: IconButton(
+                              onPressed: () {
+                                AppLinkHelper.openRoleInNewTab(
+                                  role: roleKey,
+                                  arenaCode: verifiedArenaParam,
+                                );
+                              },
+                              icon: Icon(
+                                Icons.open_in_new_rounded,
+                                size: 15,
+                                color: accentColor,
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 36,
+                                minHeight: 36,
+                              ),
+                              padding: EdgeInsets.zero,
+                              style: IconButton.styleFrom(
+                                backgroundColor: badgeBg,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                                side: BorderSide(color: badgeBorder),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

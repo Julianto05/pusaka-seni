@@ -146,15 +146,28 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       // 5. Verify that summary popup appears with Juri 2's synchronized score
+      //    and stays LOCKED until Dewan finalizes or switches to next match
       expect(find.text('NILAI JURI 2 BERHASIL DISINKRONKAN'), findsOneWidget);
-      expect(find.text('Menunggu Dewan Pertandingan memulai partai berikutnya...'), findsOneWidget);
-      expect(find.text('TUTUP (MENUNGGU PARTAI BERIKUTNYA)'), findsOneWidget);
+      expect(
+        find.text(
+          'Menunggu Dewan Pertandingan mengesahkan partai atau memulai partai berikutnya...',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('TERKUNCI — MENUNGGU PENGESAHAN DEWAN'), findsOneWidget);
+      expect(find.text('TUTUP (MENUNGGU PARTAI BERIKUTNYA)'), findsNothing);
 
-      // Close the summary dialog
-      await tester.tap(find.text('TUTUP (MENUNGGU PARTAI BERIKUTNYA)'));
+      // Tapping outside (barrier) MUST NOT dismiss the locked popup
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('NILAI JURI 2 BERHASIL DISINKRONKAN'), findsOneWidget);
+
+      // 5b. Dewan finalizes / endorses the match -> popup automatically closes!
+      sync.dewanFinalizeMatch(9.95);
       await tester.pumpAndSettle();
 
-      // Verify submitted standby banner is visible
+      // Verify submitted standby banner is visible after Dewan finalization
+      expect(find.text('NILAI JURI 2 BERHASIL DISINKRONKAN'), findsNothing);
       expect(find.textContaining('NILAI JURI 2:'), findsOneWidget);
       expect(find.textContaining('TERKUNCI'), findsOneWidget);
 

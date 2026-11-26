@@ -187,8 +187,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      // Verify Gelanggang via quick chip
-      await tester.tap(find.text('GELANGGANG A'));
+      // Verify Gelanggang by entering 8-digit code
+      await tester.enterText(find.byType(TextField), '12345678');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(ScoringPanelView), findsOneWidget);
 
@@ -209,7 +209,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      await tester.tap(find.text('GELANGGANG A'));
+      await tester.enterText(find.byType(TextField), '12345678');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(DewanPanelView), findsOneWidget);
 
@@ -222,7 +222,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      await tester.tap(find.text('GELANGGANG A'));
+      await tester.enterText(find.byType(TextField), '12345678');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(TimekeeperPanelView), findsOneWidget);
 
@@ -235,7 +235,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(GelanggangVerificationView), findsOneWidget);
 
-      await tester.tap(find.text('GELANGGANG A'));
+      await tester.enterText(find.byType(TextField), '12345678');
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(find.byType(MonitoringScoreboardView), findsOneWidget);
 

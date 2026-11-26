@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../theme/app_theme.dart';
 
 class ResetConfirmDialog extends StatelessWidget {
   final String categoryTitle;
@@ -26,23 +27,13 @@ class ResetConfirmDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 360, maxHeight: maxH),
+        constraints: BoxConstraints(maxWidth: 370, maxHeight: maxH),
         child: Container(
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: const Color(0xFFEF4444).withValues(alpha: 0.3),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
+          decoration: AppDecorations.card(
+            radius: 24,
+            borderColor: AppColors.primaryBorder,
+            borderWidth: 1.4,
           ),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
@@ -50,34 +41,35 @@ class ResetConfirmDialog extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 50,
+                  height: 50,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                    color: AppColors.primarySoft,
                     shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.primaryBorder),
                   ),
                   child: const Icon(
                     Icons.refresh_rounded,
-                    color: Color(0xFFEF4444),
+                    color: AppColors.primary,
                     size: 26,
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
+                Text(
                   'Reset Penilaian?',
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   message,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
-                    color: Color(0xFF94A3B8),
+                    color: AppColors.textSecondary,
                     height: 1.4,
                   ),
                 ),
@@ -88,14 +80,17 @@ class ResetConfirmDialog extends StatelessWidget {
                       child: OutlinedButton(
                         onPressed: () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF94A3B8),
-                          side: const BorderSide(color: Color(0xFF475569)),
+                          foregroundColor: AppColors.textSecondary,
+                          side: BorderSide(color: AppColors.borderStrong),
                           padding: const EdgeInsets.symmetric(vertical: 11),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Batal'),
+                        child: const Text(
+                          'Batal',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -106,17 +101,17 @@ class ResetConfirmDialog extends StatelessWidget {
                           onReset();
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFDC2626),
+                          backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 11),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           elevation: 0,
                         ),
                         child: const Text(
                           'Ya, Reset',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
                     ),

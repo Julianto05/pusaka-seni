@@ -6,7 +6,7 @@ void main() {
   testWidgets('PusakaSeniApp configures scoringUrl properly and initializes',
       (WidgetTester tester) async {
     expect(PusakaSeniApp.scoringUrl,
-        'https://app-seni.pusakarinjani.my.id/scoring');
+        'https://beseni-temp.pusakarinjani.my.id');
 
     await tester.pumpWidget(
       const PusakaSeniApp(

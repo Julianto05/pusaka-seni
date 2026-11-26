@@ -128,6 +128,63 @@ class JurusModel {
   }
 }
 
+class VerifiedGelanggangInfo {
+  final String? gelanggangId;
+  final String? gelanggangDocId;
+  final String rawArenaCode;
+  final String arenaLabel;
+  final String? eventId;
+  final String? eventDocId;
+  final String? eventTitle;
+  final String? eventCode;
+  final int? jumlahJuri;
+
+  const VerifiedGelanggangInfo({
+    this.gelanggangId,
+    this.gelanggangDocId,
+    required this.rawArenaCode,
+    required this.arenaLabel,
+    this.eventId,
+    this.eventDocId,
+    this.eventTitle,
+    this.eventCode,
+    this.jumlahJuri,
+  });
+
+  factory VerifiedGelanggangInfo.fromJson(Map<String, dynamic> json) {
+    final rawCode = json['arena_code']?.toString().trim() ?? '';
+    final desc = json['description']?.toString().trim() ?? '';
+    final ev = json['event'] is Map ? json['event'] as Map : null;
+    final evTitle = ev?['event_title']?.toString().trim();
+    final evCode = ev?['event_code']?.toString().trim();
+
+    String label;
+    if (desc.isNotEmpty && rawCode.isNotEmpty) {
+      label = desc.toUpperCase().contains(rawCode.toUpperCase())
+          ? desc.toUpperCase()
+          : '${desc.toUpperCase()} ($rawCode)';
+    } else if (desc.isNotEmpty) {
+      label = desc.toUpperCase();
+    } else {
+      label = rawCode.isNotEmpty ? 'GELANGGANG $rawCode' : 'GELANGGANG A';
+    }
+
+    return VerifiedGelanggangInfo(
+      gelanggangId: json['id']?.toString(),
+      gelanggangDocId: json['documentId']?.toString(),
+      rawArenaCode: rawCode,
+      arenaLabel: label,
+      eventId: ev?['id']?.toString(),
+      eventDocId: ev?['documentId']?.toString(),
+      eventTitle: (evTitle != null && evTitle.isNotEmpty) ? evTitle : null,
+      eventCode: (evCode != null && evCode.isNotEmpty) ? evCode : null,
+      jumlahJuri: ev?['jumlah_juri'] is num
+          ? (ev!['jumlah_juri'] as num).toInt()
+          : null,
+    );
+  }
+}
+
 class AthleteModel {
   final String id;
   final String documentId;
@@ -135,7 +192,11 @@ class AthleteModel {
   final String kontingen;
   final String category;
   final String pool;
+  final String? poolDocId;
   final String partai;
+  final String? eventId;
+  final String? eventDocId;
+  final String? gelanggangDocId;
 
   const AthleteModel({
     required this.id,
@@ -144,18 +205,53 @@ class AthleteModel {
     required this.kontingen,
     required this.category,
     this.pool = 'Pool A',
+    this.poolDocId,
     this.partai = 'Partai 1',
+    this.eventId,
+    this.eventDocId,
+    this.gelanggangDocId,
   });
 
-  factory AthleteModel.fromJson(Map<String, dynamic> json) {
+  factory AthleteModel.fromJson(
+    Map<String, dynamic> json, {
+    String? overridePartai,
+    String? overridePoolName,
+    String? overridePoolDocId,
+    String? overrideCategory,
+    String? overrideEventId,
+    String? overrideEventDocId,
+    String? overrideGelanggangDocId,
+  }) {
+    final poolMap = json['pool'] is Map ? json['pool'] as Map : null;
+    final eventMap = json['event'] is Map ? json['event'] as Map : null;
+    final poolName = overridePoolName ??
+        poolMap?['pool_name']?.toString() ??
+        poolMap?['nama_pool']?.toString() ??
+        'Pool A';
+    final poolDoc = overridePoolDocId ?? poolMap?['documentId']?.toString();
+    final evId = overrideEventId ?? eventMap?['id']?.toString();
+    final evDoc = overrideEventDocId ?? eventMap?['documentId']?.toString();
+
     return AthleteModel(
       id: json['id']?.toString() ?? '',
-      documentId: json['documentId']?.toString() ?? json['id']?.toString() ?? '',
+      documentId:
+          json['documentId']?.toString() ?? json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Pesilat',
-      kontingen: json['kontingen']?.toString() ?? json['perguruan']?.toString() ?? 'Kontingen IPSI',
-      category: json['kategori_seni']?.toString() ?? 'tunggal',
-      pool: json['pool'] is Map ? (json['pool']['nama_pool']?.toString() ?? 'Pool A') : 'Pool A',
-      partai: json['nomor_partai']?.toString() ?? 'Partai 1',
+      kontingen: json['kontingen']?.toString() ??
+          json['perguruan']?.toString() ??
+          'Kontingen IPSI',
+      category: overrideCategory ??
+          json['kategori_seni']?.toString() ??
+          poolMap?['kategori']?.toString() ??
+          'tunggal',
+      pool: poolName,
+      poolDocId: poolDoc,
+      partai: overridePartai ??
+          json['nomor_partai']?.toString() ??
+          (json['id'] != null ? 'Partai ${json['id']}' : 'Partai 1'),
+      eventId: evId,
+      eventDocId: evDoc,
+      gelanggangDocId: overrideGelanggangDocId,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../theme/app_theme.dart';
 
 class ConfirmGandaDialog extends StatelessWidget {
   final int juriNumber;
@@ -30,23 +31,13 @@ class ConfirmGandaDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 390, maxHeight: maxH),
+        constraints: BoxConstraints(maxWidth: 400, maxHeight: maxH),
         child: Container(
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: const Color(0xFFDC2626).withValues(alpha: 0.35),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 25,
-                offset: const Offset(0, 10),
-              ),
-            ],
+          decoration: AppDecorations.card(
+            radius: 24,
+            borderColor: AppColors.primaryBorder,
+            borderWidth: 1.4,
           ),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
@@ -55,18 +46,16 @@ class ConfirmGandaDialog extends StatelessWidget {
               children: [
                 // Icon Header
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 54,
+                  height: 54,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626).withValues(alpha: 0.15),
+                    color: AppColors.primarySoft,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFFDC2626).withValues(alpha: 0.3),
-                    ),
+                    border: Border.all(color: AppColors.primaryBorder),
                   ),
                   child: const Icon(
                     Icons.emoji_events_rounded,
-                    color: Color(0xFFEF4444),
+                    color: AppColors.primary,
                     size: 28,
                   ),
                 ),
@@ -74,19 +63,19 @@ class ConfirmGandaDialog extends StatelessWidget {
                 Text(
                   'Konfirmasi Nilai $categoryTitle',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 RichText(
                   textAlign: TextAlign.center,
                   text: TextSpan(
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: Color(0xFF94A3B8),
+                      color: AppColors.textSecondary,
                     ),
                     children: [
                       TextSpan(
@@ -95,9 +84,9 @@ class ConfirmGandaDialog extends StatelessWidget {
                       ),
                       TextSpan(
                         text: athleteName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                       const TextSpan(text: ' sudah sesuai.'),
@@ -109,61 +98,61 @@ class ConfirmGandaDialog extends StatelessWidget {
                 // Breakdown Box
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF334155)),
+                  decoration: AppDecorations.softTile(
+                    radius: 16,
+                    color: AppColors.surfaceSoft,
+                    borderColor: AppColors.border,
                   ),
                   child: Column(
                     children: [
                       _buildAspectRow(
                         'Nilai Awal Penampilan',
                         '9.90',
-                        color: const Color(0xFF38BDF8),
+                        color: AppColors.skyText,
                       ),
-                      const Divider(color: Color(0xFF334155), height: 16),
+                      Divider(color: AppColors.border, height: 16),
                       _buildAspectRow(
                         '1. Penalti Serang Bela',
                         '-${attackDefense.toStringAsFixed(2)}',
                         color: attackDefense > 0
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF94A3B8),
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
                       ),
                       const SizedBox(height: 8),
                       _buildAspectRow(
                         '2. Penalti Kemantapan & Keselarasan',
                         '-${firmnessHarmony.toStringAsFixed(2)}',
                         color: firmnessHarmony > 0
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF94A3B8),
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
                       ),
                       const SizedBox(height: 8),
                       _buildAspectRow(
                         '3. Penalti Penjiwaan & Karakter',
                         '-${soulfulness.toStringAsFixed(2)}',
                         color: soulfulness > 0
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF94A3B8),
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
                       ),
-                      const Divider(color: Color(0xFF334155), height: 16),
+                      Divider(color: AppColors.border, height: 16),
                       _buildAspectRow(
                         'Total Pengurangan (Penalti)',
                         '-${totalPenalty.toStringAsFixed(2)}',
                         color: totalPenalty > 0
-                            ? const Color(0xFFF87171)
-                            : const Color(0xFF94A3B8),
+                            ? AppColors.primaryText
+                            : AppColors.textSecondary,
                       ),
-                      const Divider(color: Color(0xFF334155), height: 16),
+                      Divider(color: AppColors.border, height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
                             child: Text(
                               'Total Nilai Akhir Juri $juriNumber:',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -175,7 +164,7 @@ class ConfirmGandaDialog extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w900,
-                              color: Color(0xFF10B981),
+                              color: AppColors.emerald,
                               fontFamily: 'monospace',
                             ),
                           ),
@@ -193,18 +182,18 @@ class ConfirmGandaDialog extends StatelessWidget {
                       child: OutlinedButton(
                         onPressed: () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF94A3B8),
-                          side: const BorderSide(color: Color(0xFF475569)),
+                          foregroundColor: AppColors.textSecondary,
+                          side: BorderSide(color: AppColors.borderStrong),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         child: const FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
                             'Periksa Lagi',
-                            style: TextStyle(fontWeight: FontWeight.w600),
+                            style: TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
@@ -219,14 +208,17 @@ class ConfirmGandaDialog extends StatelessWidget {
                         icon: const Icon(Icons.check_circle_rounded, size: 16),
                         label: const FittedBox(
                           fit: BoxFit.scaleDown,
-                          child: Text('Kirim Nilai'),
+                          child: Text(
+                            'Kirim Nilai',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFDC2626),
+                          backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           elevation: 0,
                         ),
@@ -252,7 +244,7 @@ class ConfirmGandaDialog extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               color: color,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -268,7 +260,7 @@ class ConfirmGandaDialog extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               color: color,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w800,
               fontFamily: 'monospace',
             ),
           ),

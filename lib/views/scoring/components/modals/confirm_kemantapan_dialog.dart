@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../theme/app_theme.dart';
 
 class ConfirmKemantapanDialog extends StatelessWidget {
   final int juriNumber;
@@ -25,218 +26,214 @@ class ConfirmKemantapanDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 390, maxHeight: maxH),
+        constraints: BoxConstraints(maxWidth: 400, maxHeight: maxH),
         child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
-                blurRadius: 25,
-                offset: const Offset(0, 10),
-              ),
-            ],
+          padding: const EdgeInsets.all(18),
+          decoration: AppDecorations.card(
+            radius: 24,
+            borderColor: AppColors.skyBorder,
+            borderWidth: 1.4,
           ),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-            children: [
-              // Icon Header
-              Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0284C7).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: const Color(0xFF0284C7).withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.military_tech_rounded,
-                      color: Color(0xFF38BDF8),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Konfirmasi Kemantapan',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Juri $juriNumber • $athleteName',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Description
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF334155)),
-                ),
-                child: RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFFCBD5E1),
-                    ),
-                    children: [
-                      const TextSpan(text: 'Tetapkan nilai kemantapan '),
-                      TextSpan(
-                        text: '+${kemantapan.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: Color(0xFF38BDF8),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const TextSpan(text: ' dan simpan ke penilaian?'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // Data Table
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF334155)),
-                ),
-                child: Column(
+              children: [
+                // Icon Header
+                Row(
                   children: [
-                    _buildRow(
-                      'Keterangan:',
-                      'nilai kemantapan',
-                      valueColor: Colors.white,
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.skySoft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.skyBorder),
+                      ),
+                      child: const Icon(
+                        Icons.military_tech_rounded,
+                        color: AppColors.sky,
+                        size: 26,
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    _buildRow(
-                      'Penilai:',
-                      'juri $juriNumber',
-                      valueColor: const Color(0xFF94A3B8),
-                    ),
-                    const SizedBox(height: 6),
-                    _buildRow(
-                      'Nilai Kemantapan:',
-                      '+${kemantapan.toStringAsFixed(2)}',
-                      valueColor: const Color(0xFF38BDF8),
-                      isBold: true,
-                    ),
-                    const Divider(color: Color(0xFF334155), height: 16),
-                    _buildRow(
-                      'Total Skor Akhir:',
-                      totalSkor.toStringAsFixed(2),
-                      valueColor: const Color(0xFFEF4444),
-                      isBold: true,
-                      fontSize: 16,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Konfirmasi Kemantapan',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Juri $juriNumber • $athleteName',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 18),
+                const SizedBox(height: 14),
 
-              // Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF94A3B8),
-                        side: const BorderSide(color: Color(0xFF475569)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                // Description
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.skySoft,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.skyBorder),
+                  ),
+                  child: RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                      children: [
+                        const TextSpan(text: 'Tetapkan nilai kemantapan '),
+                        TextSpan(
+                          text: '+${kemantapan.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: AppColors.skyText,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                          ),
                         ),
-                      ),
-                      child: const Text(
-                        'Batal',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
+                        const TextSpan(text: ' dan simpan ke penilaian?'),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        onConfirm();
-                      },
-                      icon: const Icon(Icons.check_rounded, size: 18),
-                      label: const Text('Ya, Simpan'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0284C7),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                ),
+                const SizedBox(height: 12),
+
+                // Data Table
+                Container(
+                  padding: const EdgeInsets.all(13),
+                  decoration: AppDecorations.softTile(
+                    radius: 16,
+                    color: AppColors.surfaceSoft,
+                    borderColor: AppColors.border,
+                  ),
+                  child: Column(
+                    children: [
+                      _buildRow(
+                        'Keterangan:',
+                        'nilai kemantapan',
+                        valueColor: AppColors.textPrimary,
+                      ),
+                      const SizedBox(height: 6),
+                      _buildRow(
+                        'Penilai:',
+                        'juri $juriNumber',
+                        valueColor: AppColors.textSecondary,
+                      ),
+                      const SizedBox(height: 6),
+                      _buildRow(
+                        'Nilai Kemantapan:',
+                        '+${kemantapan.toStringAsFixed(2)}',
+                        valueColor: AppColors.sky,
+                        isBold: true,
+                      ),
+                      Divider(color: AppColors.border, height: 16),
+                      _buildRow(
+                        'Total Skor Akhir:',
+                        totalSkor.toStringAsFixed(2),
+                        valueColor: AppColors.primary,
+                        isBold: true,
+                        fontSize: 16,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textSecondary,
+                          side: BorderSide(color: AppColors.borderStrong),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
-                        elevation: 0,
+                        child: const Text(
+                          'Batal',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          onConfirm();
+                        },
+                        icon: const Icon(Icons.check_rounded, size: 18),
+                        label: const Text(
+                          'Ya, Simpan',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.sky,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildRow(
     String label,
     String value, {
-    Color valueColor = Colors.white,
+    Color? valueColor,
     bool isBold = false,
     double fontSize = 12.5,
   }) {
+    final resolvedValueColor = valueColor ?? AppColors.textPrimary;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
-              color: Color(0xFF94A3B8),
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -251,8 +248,8 @@ class ConfirmKemantapanDialog extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: fontSize,
-              color: valueColor,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              color: resolvedValueColor,
+              fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
               fontFamily: isBold ? 'monospace' : null,
             ),
           ),

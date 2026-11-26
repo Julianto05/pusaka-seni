@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../models/scoring_models.dart';
 import '../../services/gelanggang_sync_service.dart';
+import '../../services/platform_env.dart';
 import '../../services/pusaka_seni_api_service.dart';
+import '../../theme/app_theme.dart';
 
 class GelanggangVerificationView extends StatefulWidget {
   final String roleName;
@@ -34,21 +38,16 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   bool _isCameraActive = false;
   bool _isTorchOn = false;
   bool _isVerifying = false;
+  int _activeMethodTab = 0; // 0: Kode 8 Digit, 1: Scan QR (compact screens)
   List<Map<String, dynamic>> _liveGelanggangs = [];
 
-  // Juri Device Assignment (Locked per mobile device)
   bool get _isJuriRole => widget.roleName.toLowerCase().contains('juri');
   late int _selectedJuri;
   late String _syncedArena;
 
-  // Controllers for soft keyboard on mobile devices
   late final TextEditingController _pinController;
   late final FocusNode _pinFocusNode;
-
-  // Controller for device mobile camera barcode/QR scanner
   MobileScannerController? _scannerController;
-
-  // Animation controller for QR scanner laser
   late AnimationController _laserAnimController;
 
   @override
@@ -95,9 +94,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   }
 
   void _handleGelanggangSync() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   String get _currentTargetArena {
@@ -111,9 +108,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     try {
       final list = await PusakaSeniApiService().fetchGelanggangs();
       if (mounted) {
-        setState(() {
-          _liveGelanggangs = list;
-        });
+        setState(() => _liveGelanggangs = list);
       }
     } catch (_) {}
   }
@@ -168,6 +163,20 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   }
 
   void _toggleCamera() {
+    if (!kIsWeb && isWindowsDesktop()) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Scan kamera QR tidak tersedia di Windows Desktop. Silakan masukkan kode 8 digit gelanggang.',
+          ),
+          backgroundColor: AppColors.amber,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isCameraActive = !_isCameraActive;
       if (_isCameraActive) {
@@ -188,8 +197,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     for (final barcode in capture.barcodes) {
       final raw = barcode.rawValue ?? barcode.displayValue;
       if (raw != null && raw.trim().isNotEmpty) {
-        final code = raw.trim();
-        _handleScannedBarcode(code);
+        _handleScannedBarcode(raw.trim());
         break;
       }
     }
@@ -200,9 +208,15 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     final upper = cleanCode.toUpperCase();
     String? arenaName;
 
-    if (upper == '87654321' || upper.contains('ARENA-B') || upper.contains('GELANGGANG B') || upper.endsWith(' B')) {
+    if (upper == '87654321' ||
+        upper.contains('ARENA-B') ||
+        upper.contains('GELANGGANG B') ||
+        upper.endsWith(' B')) {
       arenaName = 'GELANGGANG B';
-    } else if (upper == '12345678' || upper.contains('ARENA-A') || upper.contains('GELANGGANG A') || upper.endsWith(' A')) {
+    } else if (upper == '12345678' ||
+        upper.contains('ARENA-A') ||
+        upper.contains('GELANGGANG A') ||
+        upper.endsWith(' A')) {
       arenaName = 'GELANGGANG A';
     }
 
@@ -216,49 +230,80 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     _verifyCode(cleanCode, customArenaName: arenaName);
   }
 
-  void _verifyCode(String code, {String? customArenaName}) {
-    if (_isVerifying) return;
-    setState(() => _isVerifying = true);
-
-    String arenaName = customArenaName ?? '';
-
-    if (arenaName.isEmpty) {
-      final clean = code.trim().toUpperCase();
-      if (clean == '12345678' || clean == 'ARENA-A' || clean == 'GELANGGANG A' || clean == 'A') {
-        arenaName = 'GELANGGANG A';
-      } else if (clean == '87654321' || clean == 'ARENA-B' || clean == 'GELANGGANG B' || clean == 'B') {
-        arenaName = 'GELANGGANG B';
-      } else {
-        // Match against live gelanggangs from API
-        for (final g in _liveGelanggangs) {
-          final c = g['arena_code']?.toString().toUpperCase() ?? '';
-          final desc = g['description']?.toString().toUpperCase() ?? '';
-          if (c == clean || clean.contains(c) || desc == clean || desc.contains(clean)) {
-            arenaName = g['description']?.toString() ?? g['arena_code']?.toString() ?? clean;
-            break;
-          }
-        }
-        if (arenaName.isEmpty) {
-          arenaName = clean.startsWith('GELANGGANG') || clean.startsWith('ARENA')
-              ? clean
-              : 'GELANGGANG $clean';
-        }
+  VerifiedGelanggangInfo? _findCachedGelanggang(String cleanCode) {
+    final upper = cleanCode.trim().toUpperCase();
+    for (final g in _liveGelanggangs) {
+      final c = g['arena_code']?.toString().trim().toUpperCase() ?? '';
+      final desc = g['description']?.toString().trim().toUpperCase() ?? '';
+      if ((c.isNotEmpty && (c == upper || upper.contains(c))) ||
+          (desc.isNotEmpty && desc == upper)) {
+        return VerifiedGelanggangInfo.fromJson(g);
       }
     }
+    return null;
+  }
 
-    Timer(const Duration(milliseconds: 300), () async {
-      if (!mounted) return;
+  Future<void> _verifyCode(String code, {String? customArenaName}) async {
+    final clean = code.trim();
+    if (_isVerifying || clean.isEmpty) return;
+    setState(() => _isVerifying = true);
+
+    try {
       final sync = GelanggangSyncService.instance;
-      if (_isJuriRole) {
+      final upper = clean.toUpperCase();
+
+      // Lookup live backend metadata to lock Event ID & Gelanggang Document ID
+      VerifiedGelanggangInfo? info = _findCachedGelanggang(clean);
+      if (info == null && sync.cloudSyncEnabled) {
+        try {
+          info = await PusakaSeniApiService().verifyGelanggangByCode(clean);
+        } catch (_) {
+          info = null;
+        }
+      }
+
+      if (!mounted) return;
+
+      String arenaName = customArenaName ?? '';
+      if (arenaName.isEmpty) {
+        if (upper == '12345678' ||
+            upper == 'ARENA-A' ||
+            upper == 'GELANGGANG A' ||
+            upper == 'A') {
+          arenaName = 'GELANGGANG A';
+        } else if (upper == '87654321' ||
+            upper == 'ARENA-B' ||
+            upper == 'GELANGGANG B' ||
+            upper == 'B') {
+          arenaName = 'GELANGGANG B';
+        } else if (info != null) {
+          arenaName = info.arenaLabel;
+        } else {
+          arenaName = upper.startsWith('GELANGGANG') || upper.startsWith('ARENA')
+              ? upper
+              : 'GELANGGANG $upper';
+        }
+      }
+
+      final int? eventJuriCount = info?.jumlahJuri;
+
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (!mounted) return;
+
+      // Always pull Dewan's authoritative judge count & Timekeeper's live timer first
+      // so non-Dewan devices never overwrite Dewan's activeJuriCount.
+      try {
         await sync.pullArenaSync(arenaName);
-        if (!mounted) return;
+      } catch (_) {}
+      if (!mounted) return;
+
+      if (_isJuriRole) {
         final available = sync.getAvailableJudgesForThisDevice(arenaCode: arenaName);
         if (available.isEmpty) {
-          setState(() => _isVerifying = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Semua nomor juri sudah terisi di $arenaName!'),
-              backgroundColor: const Color(0xFFDC2626),
+              backgroundColor: AppColors.primary,
               duration: const Duration(seconds: 3),
             ),
           );
@@ -270,87 +315,199 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
         sync.setSelectedJuriNumber(_selectedJuri);
         sync.claimJuri(_selectedJuri, arenaCode: arenaName);
       }
-      sync.verifyGelanggang(arenaCode: arenaName);
 
+      sync.verifyGelanggang(
+        arenaCode: arenaName,
+        rawArenaCode: info?.rawArenaCode.isNotEmpty == true
+            ? info!.rawArenaCode
+            : clean,
+        gelanggangId: info?.gelanggangId,
+        gelanggangDocId: info?.gelanggangDocId,
+        eventId: info?.eventId,
+        eventDocId: info?.eventDocId,
+        eventTitle: info?.eventTitle,
+        eventCode: info?.eventCode,
+        jumlahJuri: eventJuriCount,
+      );
+
+      final eventPrefix = info?.eventTitle != null && info!.eventTitle!.isNotEmpty
+          ? '${info.eventTitle} • '
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_isJuriRole
-              ? 'Gelanggang Terverifikasi: $arenaName • Bertugas: Juri $_selectedJuri'
-              : 'Kode Gelanggang Terverifikasi: $arenaName'),
-          backgroundColor: const Color(0xFF10B981),
+              ? 'Terverifikasi: $eventPrefix$arenaName • Juri $_selectedJuri'
+              : 'Terverifikasi: $eventPrefix$arenaName'),
+          backgroundColor: AppColors.emerald,
           duration: const Duration(seconds: 2),
         ),
       );
 
       widget.onVerified(arenaName);
-    });
-  }
-
-  void _simulateScanQR(String arenaName, String code) {
-    setState(() {
-      _pinCode = code;
-      _pinController.text = code;
-    });
-    _verifyCode(code, customArenaName: arenaName);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal memverifikasi kode gelanggang. Silakan coba lagi.'),
+            backgroundColor: AppColors.primary,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isVerifying = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
+    return ListenableBuilder(
+      listenable: AppThemeController.instance,
+      builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
+      body: Container(
+        decoration: AppDecorations.pageBackground,
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Column(
+                  children: [
+                    _buildTopBar(),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isWide =
+                              constraints.maxWidth >= 760 && constraints.maxHeight >= 460;
+
+                          if (isWide) {
+                            return SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Column(
+                                children: [
+                                  if (_isJuriRole) ...[
+                                    _buildJuriSelectorSection(),
+                                    const SizedBox(height: 12),
+                                  ],
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(flex: 5, child: _buildKeypadCard()),
+                                      const SizedBox(width: 14),
+                                      Expanded(flex: 5, child: _buildQrScannerCard()),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Column(
+                              children: [
+                                if (_isJuriRole) ...[
+                                  _buildJuriSelectorSection(),
+                                  const SizedBox(height: 10),
+                                ],
+                                _buildMethodSwitcher(),
+                                const SizedBox(height: 10),
+                                _activeMethodTab == 0
+                                    ? _buildKeypadCard()
+                                    : _buildQrScannerCard(),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    );
+  }
+
+  Widget _buildMethodSwitcher() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: AppDecorations.card(radius: 14, elevated: false),
+      child: Row(
+        children: [
+          _buildMethodTabItem(index: 0, icon: Icons.pin_rounded, label: 'Kode 8 Digit'),
+          const SizedBox(width: 4),
+          _buildMethodTabItem(
+            index: 1,
+            icon: Icons.qr_code_scanner_rounded,
+            label: 'Scan QR Kamera',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMethodTabItem({
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
+    final isSelected = _activeMethodTab == index;
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _activeMethodTab = index;
+            if (index == 0 && _isCameraActive) {
+              _isCameraActive = false;
+              _scannerController?.stop();
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? widget.accentColor.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected
+                  ? widget.accentColor.withValues(alpha: 0.5)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 1. Top Bar
-              _buildTopBar(),
-              const SizedBox(height: 10),
-
-              // 2. Responsive Verification View
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth >= 780 && constraints.maxHeight >= 480;
-
-                    if (isWide) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Left Box: 8-digit Pin Input & Keypad
-                          Expanded(
-                            flex: 5,
-                            child: SingleChildScrollView(
-                              physics: const BouncingScrollPhysics(),
-                              child: _buildKeypadCard(),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-
-                          // Right Box: QR Scanner
-                          Expanded(
-                            flex: 5,
-                            child: SingleChildScrollView(
-                              physics: const BouncingScrollPhysics(),
-                              child: _buildQrScannerCard(),
-                            ),
-                          ),
-                        ],
-                      );
-                    } else {
-                      // Compact / Narrow Screen: Smooth scrollable
-                      return SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        child: Column(
-                          children: [
-                            _buildKeypadCard(),
-                            const SizedBox(height: 12),
-                            _buildQrScannerCard(),
-                          ],
-                        ),
-                      );
-                    }
-                  },
+              Icon(
+                icon,
+                size: 15,
+                color: isSelected ? widget.accentColor : AppColors.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? widget.accentColor : AppColors.textSecondary,
+                  ),
                 ),
               ),
             ],
@@ -363,37 +520,31 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   Widget _buildTopBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
+      decoration: AppDecorations.card(radius: 18),
       child: Row(
         children: [
           IconButton(
             onPressed: widget.onBack,
             tooltip: 'Kembali ke Pilihan Peran',
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 14),
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
             padding: EdgeInsets.zero,
             style: IconButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              foregroundColor: const Color(0xFFCBD5E1),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              backgroundColor: AppColors.surfaceMuted,
+              foregroundColor: AppColors.textPrimary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
-          const SizedBox(width: 8),
-
+          const SizedBox(width: 10),
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: widget.accentColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
+              color: widget.accentColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(11),
             ),
             child: Icon(widget.roleIcon, color: widget.accentColor, size: 18),
           ),
-          const SizedBox(width: 8),
-
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -403,48 +554,53 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
                   _isJuriRole ? '${widget.roleName} • Juri $_selectedJuri' : widget.roleName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 Text(
                   _isJuriRole
                       ? 'Perangkat Terkunci Sebagai Juri $_selectedJuri'
-                      : 'Verifikasi 8 Digit Gelanggang',
+                      : 'Verifikasi Akses Gelanggang',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
                 ),
               ],
             ),
           ),
-
-          // Server live indicator
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+              color: AppColors.emeraldSoft,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.emeraldBorder),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.circle, size: 6, color: Color(0xFF10B981)),
-                SizedBox(width: 4),
+                const Icon(Icons.circle, size: 6, color: AppColors.emerald),
+                const SizedBox(width: 5),
                 Text(
                   'Live',
                   style: TextStyle(
-                    fontSize: 9.5,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF6EE7B7),
+                    color: AppColors.emeraldText,
                   ),
                 ),
               ],
             ),
+          ),
+          const SizedBox(width: 6),
+          const ThemeToggleButton(
+            buttonSize: 30,
+            iconSize: 16,
+            borderRadius: 9,
           ),
         ],
       ),
@@ -453,308 +609,298 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
 
   Widget _buildKeypadCard() {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.card(radius: 22),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFD97706).withValues(alpha: 0.4)),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.asset(
-                'assets/images/app_logo_small.png',
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.pin_rounded,
-                  color: widget.accentColor,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Kode Gelanggang (8 Digit)',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Ketik 8 digit angka arena gelanggang atau pilih dari daftar aktif',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-          ),
-          const SizedBox(height: 10),
-
-          // Pilihan Nomor Juri (khusus Role Juri Pertandingan)
-          if (_isJuriRole) ...[
-            _buildJuriSelectorSection(),
-            const SizedBox(height: 10),
-          ],
-
-          // 8-Digit Pin Display Box (Clickable to open soft keyboard)
-          InkWell(
-            onTap: () {
-              _pinFocusNode.requestFocus();
-            },
-            borderRadius: BorderRadius.circular(10),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(_pinLength, (index) {
-                  final hasChar = index < _pinCode.length;
-                  final isCurrent = index == _pinCode.length;
-                  return Container(
-                    width: 32,
-                    height: 42,
-                    margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                    decoration: BoxDecoration(
-                      color: hasChar ? const Color(0xFF0F172A) : const Color(0xFF0F172A).withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isCurrent
-                            ? widget.accentColor
-                            : hasChar
-                                ? Colors.white54
-                                : const Color(0xFF334155),
-                        width: isCurrent ? 2.0 : 1.0,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        hasChar ? _pinCode[index] : '•',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'monospace',
-                          color: hasChar ? Colors.white : const Color(0xFF64748B),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Mobile Keyboard Trigger & Quick Paste button
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 6,
-            runSpacing: 6,
+          Row(
             children: [
-              // Button to trigger device soft keyboard
-              InkWell(
-                onTap: () {
-                  if (_pinFocusNode.hasFocus) {
-                    _pinFocusNode.unfocus();
-                  } else {
-                    _pinFocusNode.requestFocus();
-                  }
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: _pinFocusNode.hasFocus
-                        ? widget.accentColor.withValues(alpha: 0.25)
-                        : const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _pinFocusNode.hasFocus ? widget.accentColor : const Color(0xFF334155),
+              Container(
+                width: 42,
+                height: 42,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.amberSoft,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.amberBorder),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/images/app_logo_small.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.pin_rounded,
+                      color: widget.accentColor,
+                      size: 20,
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _pinFocusNode.hasFocus ? Icons.keyboard_hide_rounded : Icons.keyboard_rounded,
-                        size: 14,
-                        color: _pinFocusNode.hasFocus ? widget.accentColor : const Color(0xFF38BDF8),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        _pinFocusNode.hasFocus ? 'Tutup Keyboard HP' : 'Buka Keyboard HP',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: _pinFocusNode.hasFocus ? Colors.white : const Color(0xFFCBD5E1),
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ),
-
-              // Paste button
-              InkWell(
-                onTap: _onPaste,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF334155)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.content_paste_rounded, size: 13, color: Color(0xFF38BDF8)),
-                      SizedBox(width: 4),
-                      Text(
-                        'Tempel / Paste',
-                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFCBD5E1)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Kode Gelanggang (8 Digit)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'Masukkan 8 digit kode gelanggang untuk verifikasi & mengunci event',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
 
-          // Direct Mobile Phone Soft Keyboard Input Field
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 270),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: _pinFocusNode.hasFocus ? widget.accentColor : const Color(0xFF334155),
-                  width: _pinFocusNode.hasFocus ? 1.5 : 1.0,
+          // 8-Digit PIN Boxes
+          Center(
+            child: InkWell(
+              onTap: () => _pinFocusNode.requestFocus(),
+              borderRadius: BorderRadius.circular(12),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(_pinLength, (index) {
+                    final hasChar = index < _pinCode.length;
+                    final isCurrent = index == _pinCode.length;
+                    return Container(
+                      width: 34,
+                      height: 44,
+                      margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                      decoration: BoxDecoration(
+                        color: hasChar ? AppColors.surface : AppColors.surfaceSoft,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isCurrent
+                              ? widget.accentColor
+                              : hasChar
+                                  ? AppColors.borderStrong
+                                  : AppColors.border,
+                          width: isCurrent ? 1.8 : 1.0,
+                        ),
+                        boxShadow: isCurrent
+                            ? [
+                                BoxShadow(
+                                  color: widget.accentColor.withValues(alpha: 0.15),
+                                  blurRadius: 8,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Center(
+                        child: Text(
+                          hasChar ? _pinCode[index] : '•',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'monospace',
+                            color: hasChar ? AppColors.textPrimary : AppColors.borderStrong,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
-              ),
-              child: TextField(
-                controller: _pinController,
-                focusNode: _pinFocusNode,
-                keyboardType: TextInputType.text,
-                textCapitalization: TextCapitalization.characters,
-                textInputAction: TextInputAction.done,
-                inputFormatters: [
-                  LengthLimitingTextInputFormatter(_pinLength),
-                ],
-                style: const TextStyle(
-                  fontSize: 14,
-                  letterSpacing: 3,
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.center,
-                decoration: InputDecoration(
-                  hintText: 'Ketik kode via keyboard HP...',
-                  hintStyle: const TextStyle(
-                    fontSize: 10.5,
-                    letterSpacing: 0.5,
-                    color: Color(0xFF64748B),
-                  ),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                  prefixIcon: Icon(
-                    Icons.edit_note_rounded,
-                    size: 16,
-                    color: _pinFocusNode.hasFocus ? widget.accentColor : const Color(0xFF94A3B8),
-                  ),
-                  prefixIconConstraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                  suffixIcon: _pinCode.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, size: 14, color: Color(0xFF94A3B8)),
-                          onPressed: _onReset,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                        )
-                      : null,
-                ),
-                onChanged: (val) {
-                  setState(() {
-                    _pinCode = val.trim();
-                  });
-                  if (_pinCode.length >= _pinLength) {
-                    _verifyCode(_pinCode);
-                  }
-                },
-                onSubmitted: (val) {
-                  if (val.trim().isNotEmpty) {
-                    _verifyCode(val.trim());
-                  }
-                },
               ),
             ),
           ),
           const SizedBox(height: 10),
 
-          // Interactive Touch Numeric Keypad
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 270),
-            child: GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1.8,
-              children: [
-                ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
-                  (val) => _buildKeypadButton(val, () => _onKeyPress(val)),
+          // Unified Soft Keyboard & Paste Bar
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSoft,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _pinFocusNode.hasFocus ? widget.accentColor : AppColors.border,
+                    width: _pinFocusNode.hasFocus ? 1.5 : 1.0,
+                  ),
                 ),
-                _buildActionKeypadButton('Reset', _onReset, isDestructive: true),
-                _buildKeypadButton('0', () => _onKeyPress('0')),
-                _buildActionKeypadButton('Hapus', _onDelete, icon: Icons.backspace_rounded),
-              ],
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        if (_pinFocusNode.hasFocus) {
+                          _pinFocusNode.unfocus();
+                        } else {
+                          _pinFocusNode.requestFocus();
+                        }
+                      },
+                      tooltip: _pinFocusNode.hasFocus
+                          ? 'Tutup Keyboard HP'
+                          : 'Buka Keyboard HP',
+                      icon: Icon(
+                        _pinFocusNode.hasFocus
+                            ? Icons.keyboard_hide_rounded
+                            : Icons.keyboard_rounded,
+                        size: 16,
+                        color: _pinFocusNode.hasFocus
+                            ? widget.accentColor
+                            : AppColors.sky,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      padding: EdgeInsets.zero,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _pinController,
+                        focusNode: _pinFocusNode,
+                        keyboardType: TextInputType.text,
+                        textCapitalization: TextCapitalization.characters,
+                        textInputAction: TextInputAction.done,
+                        inputFormatters: [
+                          LengthLimitingTextInputFormatter(_pinLength),
+                        ],
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          letterSpacing: 2.5,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          hintText: 'Ketik kode gelanggang...',
+                          hintStyle: TextStyle(
+                            fontSize: 10.5,
+                            letterSpacing: 0.4,
+                            color: AppColors.textMuted,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                        ),
+                        onChanged: (val) {
+                          setState(() => _pinCode = val.trim());
+                          if (_pinCode.length >= _pinLength) {
+                            _verifyCode(_pinCode);
+                          }
+                        },
+                        onSubmitted: (val) {
+                          if (val.trim().isNotEmpty) {
+                            _verifyCode(val.trim());
+                          }
+                        },
+                      ),
+                    ),
+                    if (_pinCode.isNotEmpty)
+                      IconButton(
+                        onPressed: _onReset,
+                        tooltip: 'Bersihkan',
+                        icon: Icon(
+                          Icons.clear_rounded,
+                          size: 15,
+                          color: AppColors.textMuted,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        padding: EdgeInsets.zero,
+                      ),
+                    IconButton(
+                      onPressed: _onPaste,
+                      tooltip: 'Tempel / Paste',
+                      icon: const Icon(
+                        Icons.content_paste_rounded,
+                        size: 15,
+                        color: AppColors.sky,
+                      ),
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                      padding: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Tactile Soft-Elevated Touch Numeric Keypad
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 7,
+                crossAxisSpacing: 7,
+                childAspectRatio: 2.1,
+                children: [
+                  ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(
+                    (val) => _buildKeypadButton(val, () => _onKeyPress(val)),
+                  ),
+                  _buildActionKeypadButton('Reset', _onReset, isDestructive: true),
+                  _buildKeypadButton('0', () => _onKeyPress('0')),
+                  _buildActionKeypadButton('Hapus', _onDelete, icon: Icons.backspace_rounded),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Live Arena Quick Presets
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'PILIH ARENA AKTIF:',
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF94A3B8),
-                letterSpacing: 0.8,
+          // Explicit Verify Action Button (useful on Chrome/Windows & manual input)
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isVerifying || _pinCode.trim().isEmpty
+                      ? null
+                      : () => _verifyCode(_pinCode),
+                  icon: _isVerifying
+                      ? const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.verified_user_rounded, size: 16),
+                  label: Text(
+                    _isVerifying
+                        ? 'Memverifikasi Gelanggang...'
+                        : 'Verifikasi Kode Gelanggang',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.accentColor,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: AppColors.surfaceMuted,
+                    disabledForegroundColor: AppColors.textMuted,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _buildArenaChip(label: 'GELANGGANG A', code: '12345678'),
-              _buildArenaChip(label: 'GELANGGANG B', code: '87654321'),
-            ],
           ),
         ],
       ),
@@ -762,22 +908,25 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   }
 
   Widget _buildKeypadButton(String label, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFF334155)),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+    return Material(
+      color: AppColors.surfaceSoft,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
         ),
@@ -790,66 +939,61 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     final String arena = _currentTargetArena;
     final activeCount = sync.getActiveJuriCount(arenaCode: arena);
     final totalJudges = activeCount > 0 ? activeCount : 8;
-
     final availableJudges = sync.getAvailableJudgesForThisDevice(arenaCode: arena);
 
-    // Auto-align _selectedJuri to first available if current selection is not available
     if (availableJudges.isNotEmpty && !availableJudges.contains(_selectedJuri)) {
       _selectedJuri = availableJudges.first;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          sync.setSelectedJuriNumber(_selectedJuri);
-        }
+        if (mounted) sync.setSelectedJuriNumber(_selectedJuri);
       });
     }
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: widget.accentColor.withValues(alpha: 0.5),
-          width: 1.2,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: AppDecorations.card(
+        radius: 18,
+        borderColor: widget.accentColor.withValues(alpha: 0.4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.badge_rounded, color: widget.accentColor, size: 14),
+              Icon(Icons.badge_rounded, color: widget.accentColor, size: 16),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'PILIH NOMOR JURI PERANGKAT INI',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0.5,
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFDC2626).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFDC2626), width: 0.8),
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.primaryBorder),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.lock_rounded, size: 9, color: Color(0xFFFCA5A5)),
+                    Icon(Icons.lock_rounded, size: 9.5, color: AppColors.primary),
                     SizedBox(width: 3),
                     Text(
                       'Terkunci di Layar Juri',
                       style: TextStyle(
                         fontSize: 8.5,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFFCA5A5),
+                        color: AppColors.primaryText,
                       ),
                     ),
                   ],
@@ -857,29 +1001,27 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
               ),
             ],
           ),
-          const SizedBox(height: 8),
-
-          // Wrap list of available juri buttons (claimed judges are NOT displayed)
+          const SizedBox(height: 10),
           if (availableJudges.isEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF450A0A),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFDC2626)),
+                color: AppColors.primarySoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.primaryBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline_rounded, color: Color(0xFFFCA5A5), size: 16),
+                  const Icon(Icons.error_outline_rounded, color: AppColors.primary, size: 16),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Semua nomor juri ($totalJudges Juri) telah dipilih di $arena. Tidak ada slot juri tersisa.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFFCA5A5),
+                        color: AppColors.primaryText,
                       ),
                     ),
                   ),
@@ -888,36 +1030,34 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
             )
           else
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: 7,
+              runSpacing: 7,
               children: availableJudges.map((jNum) {
                 final bool isSelected = jNum == _selectedJuri;
 
                 return InkWell(
                   onTap: () {
-                    setState(() {
-                      _selectedJuri = jNum;
-                    });
+                    setState(() => _selectedJuri = jNum);
                     sync.setSelectedJuriNumber(jNum);
                   },
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(10),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    constraints: const BoxConstraints(minWidth: 62),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    duration: const Duration(milliseconds: 160),
+                    constraints: const BoxConstraints(minWidth: 68),
+                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFFDC2626) : const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(6),
+                      color: isSelected ? AppColors.primary : AppColors.surfaceSoft,
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: isSelected ? const Color(0xFFFCA5A5) : const Color(0xFF334155),
+                        color: isSelected ? AppColors.primary : AppColors.border,
                         width: isSelected ? 1.4 : 1.0,
                       ),
                       boxShadow: isSelected
                           ? [
                               BoxShadow(
-                                color: const Color(0xFFDC2626).withValues(alpha: 0.4),
-                                blurRadius: 5,
-                                offset: const Offset(0, 1),
+                                color: AppColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
                               ),
                             ]
                           : null,
@@ -927,15 +1067,15 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         if (isSelected) ...[
-                          const Icon(Icons.check_rounded, color: Colors.white, size: 12),
-                          const SizedBox(width: 3),
+                          const Icon(Icons.check_rounded, color: Colors.white, size: 13),
+                          const SizedBox(width: 4),
                         ],
                         Text(
                           'Juri $jNum',
                           style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
-                            color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                            fontSize: 11.5,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? Colors.white : AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -944,16 +1084,12 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
                 );
               }).toList(),
             ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           Text(
             availableJudges.isNotEmpty
-                ? '✓ Juri yang sudah dipilih otomatis tidak ditampilkan untuk mencegah pemilihan ganda.'
-                : '⚠ Silakan hubungi Dewan Pertandingan untuk mengatur ulang juri yang bertugas.',
-            style: const TextStyle(
-              fontSize: 9,
-              color: Color(0xFF94A3B8),
-              fontStyle: FontStyle.italic,
-            ),
+                ? '✓ Juri yang sudah dipilih perangkat lain otomatis disembunyikan.'
+                : '⚠ Hubungi Dewan Pertandingan untuk mengatur ulang slot juri.',
+            style: TextStyle(fontSize: 9.5, color: AppColors.textMuted),
           ),
         ],
       ),
@@ -966,79 +1102,30 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
     bool isDestructive = false,
     IconData? icon,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isDestructive
-              ? const Color(0xFF450A0A)
-              : const Color(0xFF0F172A),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isDestructive ? const Color(0xFF991B1B) : const Color(0xFF334155),
+    return Material(
+      color: isDestructive ? AppColors.primarySoft : AppColors.surfaceMuted,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDestructive ? AppColors.primaryBorder : AppColors.border,
+            ),
           ),
-        ),
-        child: Center(
-          child: icon != null
-              ? Icon(icon, size: 16, color: const Color(0xFFEF4444))
-              : Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: isDestructive ? const Color(0xFFFCA5A5) : const Color(0xFF94A3B8),
+          child: Center(
+            child: icon != null
+                ? const Icon(Icons.backspace_rounded, size: 16, color: AppColors.primary)
+                : Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: isDestructive ? AppColors.primaryText : AppColors.textSecondary,
+                    ),
                   ),
-                ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildArenaChip({
-    required String label,
-    required String code,
-  }) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _pinCode = code;
-        });
-        _verifyCode(code, customArenaName: label);
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0F172A),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.5)),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.stadium_rounded, size: 13, color: Color(0xFF38BDF8)),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '($code)',
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontFamily: 'monospace',
-                  color: Color(0xFF94A3B8),
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -1047,259 +1134,262 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
 
   Widget _buildQrScannerCard() {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF334155)),
-      ),
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.card(radius: 22),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFF2563EB).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.qr_code_scanner_rounded, color: Color(0xFF60A5FA), size: 24),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Scan Barcode / QR Gelanggang',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'Arahkan kamera HP ke QR Code yang tercetak pada meja arena atau tiket gelanggang',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-          ),
-          const SizedBox(height: 12),
-
-          // Camera QR Viewport Box with Live Mobile Scanner
-          Container(
-            width: 220,
-            height: 220,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: _isCameraActive
-                    ? const Color(0xFF10B981)
-                    : const Color(0xFF475569),
-                width: 2,
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.blueSoft,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.blueBorder),
+                ),
+                child: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: AppColors.blue,
+                  size: 21,
+                ),
               ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Live Camera feed via MobileScanner
-                  if (_isCameraActive)
-                    MobileScanner(
-                      controller: _scannerController,
-                      onDetect: _onDetectBarcode,
-                      errorBuilder: (context, error) {
-                        return Container(
-                          color: const Color(0xFF0F172A),
-                          padding: const EdgeInsets.all(12),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.no_photography_rounded, color: Color(0xFFEF4444), size: 36),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Akses kamera gagal: ${error.errorCode.name}\nPastikan izin akses kamera diberikan pada HP.',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(fontSize: 10.5, color: Colors.white70),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  else
-                    // Inactive Background Icon
-                    Center(
-                      child: Opacity(
-                        opacity: 0.35,
-                        child: const Icon(
-                          Icons.qr_code_2_rounded,
-                          size: 130,
-                          color: Colors.white24,
-                        ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Scan Barcode / QR Gelanggang',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
                       ),
                     ),
+                    SizedBox(height: 1),
+                    Text(
+                      'Arahkan kamera ke QR Code pada meja arena',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
 
-                  // Animated Scanning Laser Bar
-                  if (_isCameraActive)
-                    AnimatedBuilder(
-                      animation: _laserAnimController,
-                      builder: (context, child) {
-                        return Positioned(
-                          top: _laserAnimController.value * 190 + 10,
-                          left: 15,
-                          right: 15,
-                          child: Container(
-                            height: 3,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [
-                                  Colors.transparent,
-                                  Color(0xFF10B981),
-                                  Color(0xFF34D399),
-                                  Colors.transparent,
+          Center(
+            child: Container(
+              width: 210,
+              height: 210,
+              decoration: BoxDecoration(
+                color: _isCameraActive ? Colors.black : AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: _isCameraActive ? AppColors.emerald : AppColors.borderStrong,
+                  width: 1.8,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_isCameraActive)
+                      MobileScanner(
+                        controller: _scannerController,
+                        onDetect: _onDetectBarcode,
+                        errorBuilder: (context, error) {
+                          return Container(
+                            color: AppColors.surfaceSoft,
+                            padding: const EdgeInsets.all(12),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.no_photography_rounded,
+                                    color: AppColors.primary,
+                                    size: 34,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Akses kamera gagal: ${error.errorCode.name}\nPastikan izin kamera diberikan.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
                                 ],
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.8),
-                                  blurRadius: 8,
-                                  spreadRadius: 2,
+                            ),
+                          );
+                        },
+                      )
+                    else
+                      Center(
+                        child: Icon(
+                          Icons.qr_code_2_rounded,
+                          size: 112,
+                          color: AppColors.borderStrong,
+                        ),
+                      ),
+
+                    if (_isCameraActive)
+                      AnimatedBuilder(
+                        animation: _laserAnimController,
+                        builder: (context, child) {
+                          return Positioned(
+                            top: _laserAnimController.value * 180 + 12,
+                            left: 14,
+                            right: 14,
+                            child: Container(
+                              height: 3,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Colors.transparent,
+                                    AppColors.emerald,
+                                    Color(0xFF34D399),
+                                    Colors.transparent,
+                                  ],
                                 ),
-                              ],
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.emerald.withValues(alpha: 0.7),
+                                    blurRadius: 8,
+                                    spreadRadius: 1.5,
+                                  ),
+                                ],
+                              ),
                             ),
+                          );
+                        },
+                      ),
+
+                    if (_isCameraActive)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              onPressed: () async {
+                                await _scannerController?.toggleTorch();
+                                setState(() => _isTorchOn = !_isTorchOn);
+                              },
+                              tooltip: _isTorchOn ? 'Matikan Lampu' : 'Nyalakan Lampu',
+                              icon: Icon(
+                                _isTorchOn
+                                    ? Icons.flash_on_rounded
+                                    : Icons.flash_off_rounded,
+                                size: 17,
+                                color: _isTorchOn ? const Color(0xFFF59E0B) : Colors.white,
+                              ),
+                              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                              padding: EdgeInsets.zero,
+                              style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _scannerController?.switchCamera(),
+                              tooltip: 'Ganti Kamera Depan/Belakang',
+                              icon: const Icon(
+                                Icons.flip_camera_ios_rounded,
+                                size: 17,
+                                color: Colors.white,
+                              ),
+                              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                              padding: EdgeInsets.zero,
+                              style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: _isCameraActive
+                                  ? AppColors.emerald.withValues(alpha: 0.75)
+                                  : AppColors.borderStrong,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
 
-                  // Camera Control Buttons (Torch & Camera Switch)
-                  if (_isCameraActive)
                     Positioned(
-                      top: 8,
+                      bottom: 8,
+                      left: 8,
                       right: 8,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            onPressed: () async {
-                              await _scannerController?.toggleTorch();
-                              setState(() => _isTorchOn = !_isTorchOn);
-                            },
-                            tooltip: _isTorchOn ? 'Matikan Lampu' : 'Nyalakan Lampu',
-                            icon: Icon(
-                              _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                              size: 18,
-                              color: _isTorchOn ? const Color(0xFFF59E0B) : Colors.white,
-                            ),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                            padding: EdgeInsets.zero,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          IconButton(
-                            onPressed: () => _scannerController?.switchCamera(),
-                            tooltip: 'Ganti Kamera Depan/Belakang',
-                            icon: const Icon(Icons.flip_camera_ios_rounded, size: 18, color: Colors.white),
-                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                            padding: EdgeInsets.zero,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.black54,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Target Box Frame
-                  Positioned.fill(
-                    child: Padding(
-                      padding: const EdgeInsets.all(22),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
                             color: _isCameraActive
-                                ? const Color(0xFF10B981).withValues(alpha: 0.7)
-                                : Colors.white12,
-                            width: 1.5,
+                                ? Colors.black.withValues(alpha: 0.7)
+                                : AppColors.surface.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: _isCameraActive ? AppColors.emerald : AppColors.border,
+                            ),
                           ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Center Status Text
-                  Positioned(
-                    bottom: 8,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          _isCameraActive
-                              ? 'Arahkan kamera ke Barcode / QR Gelanggang...'
-                              : 'Kamera HP Siap Digunakan',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: _isCameraActive ? const Color(0xFF34D399) : Colors.white70,
+                          child: Text(
+                            _isCameraActive
+                                ? 'Memindai QR Gelanggang...'
+                                : 'Kamera Siap Digunakan',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: _isCameraActive
+                                  ? const Color(0xFF6EE7B7)
+                                  : AppColors.textSecondary,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          // Toggle Camera Scan Button
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _toggleCamera,
-              icon: Icon(
-                _isCameraActive ? Icons.camera_alt_outlined : Icons.camera_alt_rounded,
-                size: 16,
-              ),
-              label: Text(
-                _isCameraActive ? 'Tutup Kamera HP' : 'Buka Kamera HP untuk Scan QR',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isCameraActive ? const Color(0xFF0F172A) : const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
-              ),
+          ElevatedButton.icon(
+            onPressed: _toggleCamera,
+            icon: Icon(
+              _isCameraActive ? Icons.camera_alt_outlined : Icons.camera_alt_rounded,
+              size: 16,
             ),
-          ),
-          const SizedBox(height: 8),
-
-          // Direct QR Scan Simulator Action
-          OutlinedButton.icon(
-            onPressed: () => _simulateScanQR('GELANGGANG A', '12345678'),
-            icon: const Icon(Icons.flash_on_rounded, size: 14, color: Color(0xFFF59E0B)),
-            label: const Text(
-              'Simulasi Scan QR Arena A (Tes Tanpa Kamera)',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            label: Text(
+              _isCameraActive ? 'Tutup Kamera HP' : 'Buka Kamera HP untuk Scan QR',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
             ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFCBD5E1),
-              side: const BorderSide(color: Color(0xFF475569)),
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor:
+                  _isCameraActive ? AppColors.textSecondary : AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
             ),
           ),
         ],
