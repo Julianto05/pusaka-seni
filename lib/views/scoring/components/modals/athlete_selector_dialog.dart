@@ -40,13 +40,22 @@ class _AthleteSelectorDialogState extends State<AthleteSelectorDialog> {
   Future<void> _loadAthletes() async {
     setState(() => _isLoading = true);
     final sync = GelanggangSyncService.instance;
-    final state = sync.getArenaState(widget.arenaCode ?? sync.activeArenaCode);
-    final data = await PusakaSeniApiService().fetchPesertas(
+    final targetArena = widget.arenaCode ?? sync.activeArenaCode;
+    final state = sync.getArenaState(targetArena);
+    final api = PusakaSeniApiService();
+    final data = await api.fetchPesertas(
       eventId: state.lockedEventId,
       eventDocId: state.lockedEventDocId,
       gelanggangDocId: state.lockedGelanggangDocId,
       rawArenaCode: state.lockedRawArenaCode,
+      fallbackToSample: false,
     );
+    if (sync.cloudSyncEnabled) {
+      final serverScores = await api.fetchFinalizedScoresByPeserta();
+      if (serverScores.isNotEmpty) {
+        sync.hydrateFinalizedScores(serverScores, arenaCode: targetArena);
+      }
+    }
     if (mounted) {
       setState(() {
         _athletes = data;
@@ -372,17 +381,22 @@ class _AthleteSelectorDialogState extends State<AthleteSelectorDialog> {
                             const SizedBox(height: 6),
                         itemBuilder: (context, index) {
                           final ath = filtered[index];
-                          final isSelected =
-                              widget.currentAthlete.documentId.isNotEmpty &&
-                                  ath.documentId.isNotEmpty
-                              ? widget.currentAthlete.documentId ==
-                                    ath.documentId
-                              : widget.currentAthlete.partai == ath.partai;
+                          final isSelected = GelanggangSyncService.isSameAthlete(
+                            widget.currentAthlete,
+                            ath,
+                          );
 
-                          final bool isLiveNow = sync.isAthleteActive(ath);
-                          final bool isCompleted = sync.isAthleteCompleted(ath);
+                          final bool isLiveNow = sync.isAthleteActive(
+                            ath,
+                            arenaCode: widget.arenaCode,
+                          );
+                          final bool isCompleted = sync.isAthleteCompleted(
+                            ath,
+                            arenaCode: widget.arenaCode,
+                          );
                           final double? completedScore = sync.getAthleteScore(
                             ath,
+                            arenaCode: widget.arenaCode,
                           );
 
                           return InkWell(

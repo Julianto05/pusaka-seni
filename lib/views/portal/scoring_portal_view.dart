@@ -63,6 +63,7 @@ class _ScoringPortalViewState extends State<ScoringPortalView> {
         eventDocId: sync.lockedEventDocId,
         gelanggangDocId: sync.lockedGelanggangDocId,
         rawArenaCode: sync.lockedRawArenaCode,
+        fallbackToSample: false,
       );
       if (mounted) {
         setState(() {

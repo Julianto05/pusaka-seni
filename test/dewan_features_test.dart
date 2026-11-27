@@ -82,6 +82,92 @@ void main() {
       expect(sync.isAthleteActive(athlete1), isFalse);
     });
 
+    test(
+      'Participants sharing the same Partai/Pool keep independent status and finalized scores',
+      () {
+        const arena = 'GELANGGANG POOL_STATUS_ISO';
+        const ayu = AthleteModel(
+          id: '352',
+          documentId: 'doc-ayu-352',
+          name: 'Ayu Wulandari',
+          kontingen: 'Riau',
+          category: 'tunggal',
+          pool: 'Pool A (Tunggal)',
+          partai: 'Partai 01',
+        );
+        const budi = AthleteModel(
+          id: '353',
+          documentId: 'doc-budi-353',
+          name: 'Budi Pratama',
+          kontingen: 'NTB',
+          category: 'tunggal',
+          pool: 'Pool A (Tunggal)',
+          partai: 'Partai 01',
+        );
+        const citra = AthleteModel(
+          id: '354',
+          documentId: 'doc-citra-354',
+          name: 'Citra Dewi',
+          kontingen: 'Bali',
+          category: 'tunggal',
+          pool: 'Pool A (Tunggal)',
+          partai: 'Partai 01',
+        );
+
+        // 1. Before Dewan selects any athlete -> all must be BELUM TAMPIL
+        for (final ath in [ayu, budi, citra]) {
+          expect(sync.isAthleteActive(ath, arenaCode: arena), isFalse);
+          expect(sync.isAthleteCompleted(ath, arenaCode: arena), isFalse);
+          expect(sync.getAthleteScore(ath, arenaCode: arena), isNull);
+        }
+
+        // 2. Dewan selects Ayu (Partai 01) -> ONLY Ayu is SEDANG TAMPIL;
+        //    Budi & Citra (also Partai 01) MUST remain BELUM TAMPIL!
+        sync.dewanSelectMatch(
+          athlete: ayu,
+          category: SeniCategory.tunggal,
+          nomorPartai: 'Partai 01',
+          pool: 'Pool A (Tunggal)',
+          arenaCode: arena,
+        );
+        expect(sync.isAthleteActive(ayu, arenaCode: arena), isTrue);
+        expect(sync.isAthleteActive(budi, arenaCode: arena), isFalse);
+        expect(sync.isAthleteActive(citra, arenaCode: arena), isFalse);
+
+        // 3. Dewan finalizes Ayu with 9.90 -> ONLY Ayu becomes SELESAI (9.90);
+        //    Budi & Citra MUST NOT receive Ayu's score or SELESAI status!
+        sync.dewanFinalizeMatch(9.90, arenaCode: arena);
+        expect(sync.isAthleteCompleted(ayu, arenaCode: arena), isTrue);
+        expect(sync.getAthleteScore(ayu, arenaCode: arena), closeTo(9.90, 0.001));
+        expect(sync.isAthleteActive(ayu, arenaCode: arena), isFalse);
+
+        expect(sync.isAthleteCompleted(budi, arenaCode: arena), isFalse);
+        expect(sync.getAthleteScore(budi, arenaCode: arena), isNull);
+        expect(sync.isAthleteActive(budi, arenaCode: arena), isFalse);
+
+        expect(sync.isAthleteCompleted(citra, arenaCode: arena), isFalse);
+        expect(sync.getAthleteScore(citra, arenaCode: arena), isNull);
+        expect(sync.isAthleteActive(citra, arenaCode: arena), isFalse);
+
+        // 4. Dewan selects Budi (same Partai 01) -> Budi starts unfinalized (SEDANG TAMPIL),
+        //    Ayu stays SELESAI (9.90), Citra stays BELUM TAMPIL.
+        sync.dewanSelectMatch(
+          athlete: budi,
+          category: SeniCategory.tunggal,
+          nomorPartai: 'Partai 01',
+          pool: 'Pool A (Tunggal)',
+          arenaCode: arena,
+        );
+        final arenaState = sync.getArenaState(arena);
+        expect(arenaState.isMatchFinalized, isFalse);
+        expect(arenaState.officialFinalScore, 0.0);
+        expect(sync.isAthleteActive(budi, arenaCode: arena), isTrue);
+        expect(sync.isAthleteCompleted(ayu, arenaCode: arena), isTrue);
+        expect(sync.isAthleteActive(citra, arenaCode: arena), isFalse);
+        expect(sync.isAthleteCompleted(citra, arenaCode: arena), isFalse);
+      },
+    );
+
     testWidgets('AthleteSelectorDialog instant category filter and status badges render',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(800, 1000);

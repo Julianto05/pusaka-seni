@@ -218,6 +218,17 @@ class AthleteModel {
     this.gelanggangDocId,
   });
 
+  /// Neutral empty placeholder used before Dewan selects a real server athlete.
+  static const AthleteModel empty = AthleteModel(
+    id: '',
+    documentId: '',
+    name: 'Belum Ada Partai Dipilih',
+    kontingen: '-',
+    category: 'tunggal',
+    pool: '-',
+    partai: '-',
+  );
+
   factory AthleteModel.fromJson(
     Map<String, dynamic> json, {
     String? overridePartai,

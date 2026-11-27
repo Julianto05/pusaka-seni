@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pusaka_seni_v2/models/scoring_models.dart';
 import 'package:pusaka_seni_v2/services/gelanggang_sync_service.dart';
+import 'package:pusaka_seni_v2/services/pusaka_seni_api_service.dart';
 import 'package:pusaka_seni_v2/views/dewan/dewan_panel_view.dart';
 import 'package:pusaka_seni_v2/views/monitoring/monitoring_scoreboard_view.dart';
+import 'package:pusaka_seni_v2/views/portal/gelanggang_verification_view.dart';
 import 'package:pusaka_seni_v2/views/scoring/scoring_panel_view.dart';
 import 'package:pusaka_seni_v2/views/timekeeper/timekeeper_panel_view.dart';
 
@@ -275,6 +277,95 @@ void main() {
         expect(availAfterAll, [1, 2, 3, 4, 5]);
         expect(sync.getJuriStatus(2, arenaCode: arena), 'not_ready');
         expect(sync.isJuriReady(2, arenaCode: arena), isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Judge count chosen by Dewan stays synced while typing arena code on GelanggangVerificationView',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          PusakaSeniApiService.testVerifierOverride = null;
+          GelanggangSyncService.instance.resetVerification();
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        const arenaLabel = 'GELANGGANG 1 (23456789)';
+        final sync = GelanggangSyncService.instance;
+        sync.verifyGelanggang(
+          arenaCode: arenaLabel,
+          rawArenaCode: '23456789',
+          eventId: '6',
+          eventDocId: 'ev-6',
+          eventTitle: 'ABATA CAMPIO',
+          jumlahJuri: 4,
+        );
+
+        // Dewan explicitly changes active judge count to 3
+        sync.setActiveJuriCount(3, arenaCode: arenaLabel);
+        expect(sync.getActiveJuriCount(arenaCode: arenaLabel), 3);
+
+        PusakaSeniApiService.testVerifierOverride = (code) async {
+          if (code == '23456789') {
+            return const GelanggangVerificationResult(
+              status: GelanggangVerificationStatus.valid,
+              info: VerifiedGelanggangInfo(
+                gelanggangId: '717',
+                gelanggangDocId: 'gel-1',
+                rawArenaCode: '23456789',
+                arenaLabel: arenaLabel,
+                eventId: '6',
+                eventDocId: 'ev-6',
+                eventTitle: 'ABATA CAMPIO',
+                eventCode: 'ABT-87645',
+                jumlahJuri: 4, // Event default is 4, but Dewan chose 3!
+              ),
+              message: 'Kode gelanggang terverifikasi.',
+            );
+          }
+          return const GelanggangVerificationResult(
+            status: GelanggangVerificationStatus.notFound,
+            message: 'Tidak ditemukan',
+          );
+        };
+
+        String? verifiedArena;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GelanggangVerificationView(
+              roleName: 'Juri Pertandingan',
+              roleIcon: Icons.balance_rounded,
+              accentColor: const Color(0xFFF59E0B),
+              enableAnimation: false,
+              onVerified: (arena) => verifiedArena = arena,
+              onBack: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Initially shows exactly 3 judges (Juri 1..3), NOT 4 or 8
+        expect(find.text('Juri 1'), findsOneWidget);
+        expect(find.text('Juri 3'), findsOneWidget);
+        expect(find.text('Juri 4'), findsNothing);
+        expect(find.text('Juri 8'), findsNothing);
+
+        // Type partial code '2345' -> judge count MUST NOT revert to 8!
+        await tester.enterText(find.byType(TextField), '2345');
+        await tester.pumpAndSettle();
+        expect(find.text('Juri 1'), findsOneWidget);
+        expect(find.text('Juri 3'), findsOneWidget);
+        expect(find.text('Juri 4'), findsNothing);
+        expect(find.text('Juri 8'), findsNothing);
+
+        // Complete typing full 8-digit code '23456789' -> verifies and STILL keeps Dewan's 3 judges!
+        await tester.enterText(find.byType(TextField), '23456789');
+        await tester.pumpAndSettle();
+        expect(verifiedArena, arenaLabel);
+        expect(sync.getActiveJuriCount(arenaCode: arenaLabel), 3);
         expect(tester.takeException(), isNull);
       },
     );

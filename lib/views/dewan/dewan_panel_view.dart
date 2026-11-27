@@ -111,7 +111,8 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     final int absSec = _timeRemaining.abs();
     final int m = absSec ~/ 60;
     final int s = absSec % 60;
-    final formatted = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    final formatted =
+        '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return isNegative ? '-$formatted' : formatted;
   }
 
@@ -164,7 +165,8 @@ class _DewanPanelViewState extends State<DewanPanelView> {
   void _handleGelanggangSync() {
     final sync = GelanggangSyncService.instance;
     if (sync.lastSyncArenaCode != null &&
-        sync.lastSyncArenaCode != GelanggangSyncService.normalizeArenaCode(_arenaCode)) {
+        sync.lastSyncArenaCode !=
+            GelanggangSyncService.normalizeArenaCode(_arenaCode)) {
       return;
     }
     if (mounted) {
@@ -191,8 +193,11 @@ class _DewanPanelViewState extends State<DewanPanelView> {
       if (val != null) {
         final isSub = val['submitted'] as bool? ?? false;
         final rawStatus = val['status']?.toString();
-        final status = rawStatus ??
-            (isSub ? 'submitted' : (val['isReady'] == true ? 'ready' : 'not_ready'));
+        final status =
+            rawStatus ??
+            (isSub
+                ? 'submitted'
+                : (val['isReady'] == true ? 'ready' : 'not_ready'));
         _juriScores.add(
           JuriScoreState(
             juriNumber: i,
@@ -214,26 +219,12 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     final state = sync.getArenaState(_arenaCode);
     if (!state.isVerified) return;
     try {
-      final pesertas = await PusakaSeniApiService().fetchPesertas(
-        eventId: state.lockedEventId,
-        eventDocId: state.lockedEventDocId,
-        gelanggangDocId: state.lockedGelanggangDocId,
-        rawArenaCode: state.lockedRawArenaCode,
-        fallbackToSample: false,
-      );
-      if (mounted &&
-          pesertas.isNotEmpty &&
-          !state.isMatchFinalized &&
-          state.athlete.documentId.startsWith('ath-00')) {
-        final first = pesertas.first;
-        final cat = SeniCategory.fromString(first.category);
-        sync.dewanSelectMatch(
-          athlete: first,
-          category: cat,
-          nomorPartai: first.partai,
-          pool: first.pool,
-          arenaCode: _arenaCode,
-        );
+      // Hydrate official finalized scores from backend so completed participants
+      // keep their exact `SELESAI` status without auto-starting unplayed matches.
+      final serverScores =
+          await PusakaSeniApiService().fetchFinalizedScoresByPeserta();
+      if (mounted && serverScores.isNotEmpty) {
+        sync.hydrateFinalizedScores(serverScores, arenaCode: _arenaCode);
       }
     } catch (_) {}
   }
@@ -474,7 +465,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
             _athlete = newAthlete;
             _category = newCat;
             _penalties.clear();
-            _isFinalized = sync.isAthleteCompleted(newAthlete, arenaCode: _arenaCode);
+            _isFinalized = sync.isAthleteCompleted(
+              newAthlete,
+              arenaCode: _arenaCode,
+            );
           });
           sync.dewanSelectMatch(
             athlete: newAthlete,
@@ -508,7 +502,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     final idx = _penalties.indexWhere((p) => p.id == id);
     if (idx != -1) {
       setState(() => _penalties.removeAt(idx));
-      GelanggangSyncService.instance.dewanRemovePenalty(idx, arenaCode: _arenaCode);
+      GelanggangSyncService.instance.dewanRemovePenalty(
+        idx,
+        arenaCode: _arenaCode,
+      );
     }
   }
 
@@ -570,7 +567,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                 decoration: AppDecorations.softTile(radius: 14),
                 child: Column(
                   children: [
-                    _buildSummaryRow('Rata-rata Skor Juri:', avg.toStringAsFixed(4)),
+                    _buildSummaryRow(
+                      'Rata-rata Skor Juri:',
+                      avg.toStringAsFixed(4),
+                    ),
                     const SizedBox(height: 6),
                     _buildSummaryRow(
                       'Hukuman Dewan:',
@@ -593,7 +593,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Batal', style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(
+              'Batal',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -611,7 +614,8 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                   poolDocId: _athlete.poolDocId,
                   penilai: 'dewan',
                   nilai: finalScore,
-                  keterangan: 'Pengesahan Nilai Dewan Pertandingan (Penalti: -$pen)',
+                  keterangan:
+                      'Pengesahan Nilai Dewan Pertandingan (Penalti: -$pen)',
                 );
               }
 
@@ -622,7 +626,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Nilai partai berhasil disahkan dan disinkronkan ke server!'),
+                    content: Text(
+                      'Nilai partai berhasil disahkan dan disinkronkan ke server!',
+                    ),
                     backgroundColor: AppColors.emerald,
                   ),
                 );
@@ -631,7 +637,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               elevation: 0,
             ),
             child: const Text('Ya, Sahkan Nilai'),
@@ -673,74 +681,83 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     final double avg = _calculateAverageJuri();
     final double penaltiesTotal = _calculateTotalPenalties();
     final double officialScore = _calculateOfficialFinalScore();
-    final penaltyList = _category.isBaku ? availablePenaltiesBaku : availablePenaltiesGanda;
+    final penaltyList = _category.isBaku
+        ? availablePenaltiesBaku
+        : availablePenaltiesGanda;
 
     return ListenableBuilder(
       listenable: AppThemeController.instance,
       builder: (context, _) => Scaffold(
-      backgroundColor: AppColors.background,
-      body: Container(
-        decoration: AppDecorations.pageBackground,
-        child: SafeArea(
-          top: !_isFullScreen,
-          bottom: false,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: _isFullScreen ? 8 : 12,
-              vertical: _isFullScreen ? 6 : 10,
-            ),
-            child: Column(
-              children: [
-                _buildHeader(),
-                SizedBox(height: _isFullScreen ? 6 : 10),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isWide =
-                          constraints.maxWidth >= 880 && constraints.maxHeight >= 480;
+        backgroundColor: AppColors.background,
+        body: Container(
+          decoration: AppDecorations.pageBackground,
+          child: SafeArea(
+            top: !_isFullScreen,
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: _isFullScreen ? 8 : 12,
+                vertical: _isFullScreen ? 6 : 10,
+              ),
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  SizedBox(height: _isFullScreen ? 6 : 10),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isWide =
+                            constraints.maxWidth >= 880 &&
+                            constraints.maxHeight >= 480;
 
-                      if (isWide) {
-                        return Row(
-                          children: [
-                            Expanded(flex: 5, child: _buildJuriMonitoringCard(avg)),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 5,
-                              child: _buildPenaltiesAndEndorsementCard(
+                        if (isWide) {
+                          return Row(
+                            children: [
+                              Expanded(
+                                flex: 5,
+                                child: _buildJuriMonitoringCard(avg),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 5,
+                                child: _buildPenaltiesAndEndorsementCard(
+                                  penaltyList,
+                                  penaltiesTotal,
+                                  officialScore,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        return SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Column(
+                            children: [
+                              _buildJuriMonitoringCard(
+                                avg,
+                                isScrollable: false,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildPenaltiesAndEndorsementCard(
                                 penaltyList,
                                 penaltiesTotal,
                                 officialScore,
+                                isScrollable: false,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         );
-                      }
-
-                      return SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          children: [
-                            _buildJuriMonitoringCard(avg, isScrollable: false),
-                            const SizedBox(height: 12),
-                            _buildPenaltiesAndEndorsementCard(
-                              penaltyList,
-                              penaltiesTotal,
-                              officialScore,
-                              isScrollable: false,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                      },
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -758,8 +775,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
           LayoutBuilder(
             builder: (context, constraints) {
               final isVeryCompact = constraints.maxWidth < 450;
-              final int readyCount =
-                  _juriScores.where((j) => j.status != 'not_ready').length;
+              final int readyCount = _juriScores
+                  .where((j) => j.status != 'not_ready')
+                  .length;
               final bool allReady =
                   _juriScores.isNotEmpty && readyCount == _juriScores.length;
               final timerColor = _getTimerStatusColor();
@@ -789,12 +807,19 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
-                      color: allReady ? AppColors.emeraldSoft : AppColors.primarySoft,
+                      color: allReady
+                          ? AppColors.emeraldSoft
+                          : AppColors.primarySoft,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: allReady ? AppColors.emeraldBorder : AppColors.primaryBorder,
+                        color: allReady
+                            ? AppColors.emeraldBorder
+                            : AppColors.primaryBorder,
                       ),
                     ),
                     child: Row(
@@ -804,7 +829,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                           width: 6,
                           height: 6,
                           decoration: BoxDecoration(
-                            color: allReady ? AppColors.emerald : AppColors.primary,
+                            color: allReady
+                                ? AppColors.emerald
+                                : AppColors.primary,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -815,24 +842,33 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                             fontSize: 9.5,
                             fontWeight: FontWeight.bold,
                             fontFamily: 'monospace',
-                            color: allReady ? AppColors.emeraldText : AppColors.primaryText,
+                            color: allReady
+                                ? AppColors.emeraldText
+                                : AppColors.primaryText,
                           ),
                         ),
                       ],
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: timerColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: timerColor.withValues(alpha: 0.35)),
+                      border: Border.all(
+                        color: timerColor.withValues(alpha: 0.35),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _getTimerStatusIcon(standbyIcon: Icons.timer_outlined),
+                          _getTimerStatusIcon(
+                            standbyIcon: Icons.timer_outlined,
+                          ),
                           size: 10,
                           color: timerColor,
                         ),
@@ -852,7 +888,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.skySoft,
                       borderRadius: BorderRadius.circular(20),
@@ -882,7 +921,11 @@ class _DewanPanelViewState extends State<DewanPanelView> {
             decoration: AppDecorations.softTile(radius: 12),
             child: Row(
               children: [
-                Icon(Icons.people_alt_rounded, size: 15, color: AppColors.textMuted),
+                Icon(
+                  Icons.people_alt_rounded,
+                  size: 15,
+                  color: AppColors.textMuted,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'Juri Bertugas:',
@@ -904,26 +947,39 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                           padding: const EdgeInsets.only(right: 6),
                           child: InkWell(
                             onTap: () {
-                              GelanggangSyncService.instance
-                                  .setActiveJuriCount(count, arenaCode: _arenaCode);
+                              GelanggangSyncService.instance.setActiveJuriCount(
+                                count,
+                                arenaCode: _arenaCode,
+                              );
                             },
                             borderRadius: BorderRadius.circular(8),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
-                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
-                                color: isSelected ? AppColors.primary : AppColors.surface,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : AppColors.surface,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: isSelected ? AppColors.primary : AppColors.border,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.border,
                                 ),
                               ),
                               child: Text(
                                 '$count Juri',
                                 style: TextStyle(
                                   fontSize: 10,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.w600,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.textSecondary,
                                 ),
                               ),
                             ),
@@ -987,7 +1043,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     final int crossCount = count <= 3 ? count : 2;
 
     return GridView.builder(
-      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
+      physics: shrinkWrap
+          ? const NeverScrollableScrollPhysics()
+          : const BouncingScrollPhysics(),
       shrinkWrap: shrinkWrap,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossCount,
@@ -1042,25 +1100,29 @@ class _DewanPanelViewState extends State<DewanPanelView> {
             break;
         }
 
-        final bool hasJurusProgress = _category.isBaku &&
+        final bool hasJurusProgress =
+            _category.isBaku &&
             j.currentJurus != null &&
             j.totalJurus != null &&
             j.totalJurus! > 0 &&
             (j.status == 'scoring' || j.status == 'submitted');
         final bool isJurusTuntas =
-            j.status == 'submitted' || (j.jurusLabel?.toLowerCase() == 'tuntas');
+            j.status == 'submitted' ||
+            (j.jurusLabel?.toLowerCase() == 'tuntas');
         final String shortGroup = _formatShortJurusLabel(j.jurusLabel);
         final String jurusText = hasJurusProgress
             ? (isJurusTuntas
-                ? 'Tuntas (${j.totalJurus}/${j.totalJurus})'
-                : (shortGroup.isNotEmpty
-                    ? 'Jurus ${j.currentJurus}/${j.totalJurus} • $shortGroup'
-                    : 'Jurus ${j.currentJurus}/${j.totalJurus}'))
+                  ? 'Tuntas (${j.totalJurus}/${j.totalJurus})'
+                  : (shortGroup.isNotEmpty
+                        ? 'Jurus ${j.currentJurus}/${j.totalJurus} • $shortGroup'
+                        : 'Jurus ${j.currentJurus}/${j.totalJurus}'))
             : '';
         final double jurusProgress = hasJurusProgress
             ? (j.currentJurus! / j.totalJurus!).clamp(0.0, 1.0)
             : 0.0;
-        final Color jurusAccent = isJurusTuntas ? AppColors.sky : AppColors.amber;
+        final Color jurusAccent = isJurusTuntas
+            ? AppColors.sky
+            : AppColors.amber;
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
@@ -1111,11 +1173,17 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                             ),
                             const SizedBox(height: 3),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1.5,
+                              ),
                               decoration: BoxDecoration(
                                 color: badgeBg,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: badgeBorder, width: 0.8),
+                                border: Border.all(
+                                  color: badgeBorder,
+                                  width: 0.8,
+                                ),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -1146,7 +1214,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                           fontSize: 16.5,
                           fontWeight: FontWeight.w900,
                           fontFamily: 'monospace',
-                          color: j.isSubmitted ? AppColors.sky : AppColors.primary,
+                          color: j.isSubmitted
+                              ? AppColors.sky
+                              : AppColors.primary,
                         ),
                       ),
                     ),
@@ -1156,12 +1226,19 @@ class _DewanPanelViewState extends State<DewanPanelView> {
               if (hasJurusProgress) ...[
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: isJurusTuntas ? AppColors.skySoft : AppColors.amberSoft,
+                    color: isJurusTuntas
+                        ? AppColors.skySoft
+                        : AppColors.amberSoft,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: isJurusTuntas ? AppColors.skyBorder : AppColors.amberBorder,
+                      color: isJurusTuntas
+                          ? AppColors.skyBorder
+                          : AppColors.amberBorder,
                       width: 0.8,
                     ),
                   ),
@@ -1203,7 +1280,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                           value: jurusProgress,
                           minHeight: 3,
                           backgroundColor: AppColors.surface,
-                          valueColor: AlwaysStoppedAnimation<Color>(jurusAccent),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            jurusAccent,
+                          ),
                         ),
                       ),
                     ],
@@ -1236,7 +1315,11 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: AppColors.primary, size: 17),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.primary,
+                      size: 17,
+                    ),
                     SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -1283,10 +1366,14 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                 color: AppColors.surfaceSoft,
                 borderRadius: BorderRadius.circular(10),
                 child: InkWell(
-                  onTap: () => _addPenalty(p['label'] as String, p['value'] as double),
+                  onTap: () =>
+                      _addPenalty(p['label'] as String, p['value'] as double),
                   borderRadius: BorderRadius.circular(10),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppColors.border),
@@ -1309,7 +1396,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                         ),
                         const SizedBox(width: 5),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.primarySoft,
                             borderRadius: BorderRadius.circular(6),
@@ -1353,7 +1443,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: (_isFinalized || _isSubmitting) ? null : _showFinalizeConfirmation,
+              onPressed: (_isFinalized || _isSubmitting)
+                  ? null
+                  : _showFinalizeConfirmation,
               icon: Icon(
                 _isFinalized ? Icons.verified_rounded : Icons.gavel_rounded,
                 size: 16,
@@ -1364,16 +1456,23 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                   _isFinalized
                       ? 'Partai Selesai & Disahkan (${officialScore.toStringAsFixed(4)})'
                       : _isSubmitting
-                          ? 'Menyimpan ke Server...'
-                          : 'Sahkan Nilai Partai (${officialScore.toStringAsFixed(4)})',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                      ? 'Menyimpan ke Server...'
+                      : 'Sahkan Nilai Partai (${officialScore.toStringAsFixed(4)})',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _isFinalized ? AppColors.emerald : AppColors.primary,
+                backgroundColor: _isFinalized
+                    ? AppColors.emerald
+                    : AppColors.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 11),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 0,
               ),
             ),
@@ -1398,7 +1497,8 @@ class _DewanPanelViewState extends State<DewanPanelView> {
             shrinkWrap: maxHeight != null,
             physics: const BouncingScrollPhysics(),
             itemCount: _penalties.length,
-            separatorBuilder: (_, _) => Divider(color: AppColors.border, height: 1),
+            separatorBuilder: (_, _) =>
+                Divider(color: AppColors.border, height: 1),
             itemBuilder: (context, index) {
               final pen = _penalties[index];
               return Row(
@@ -1430,7 +1530,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                       color: AppColors.textMuted,
                     ),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                    constraints: const BoxConstraints(
+                      minWidth: 26,
+                      minHeight: 26,
+                    ),
                   ),
                 ],
               );
@@ -1467,7 +1570,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                   foregroundColor: AppColors.textPrimary,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -1503,7 +1608,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                   onTap: _openAthleteSelector,
                   borderRadius: BorderRadius.circular(11),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.primarySoft.withValues(alpha: 0.65),
                       borderRadius: BorderRadius.circular(11),
@@ -1573,8 +1681,8 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                                       .lockedEventTitle;
                                   final evPrefix =
                                       evTitle != null && evTitle.isNotEmpty
-                                          ? '$evTitle • '
-                                          : '';
+                                      ? '$evTitle • '
+                                      : '';
                                   return Text(
                                     '$evPrefix${_athlete.name} (${_athlete.kontingen}) • ${_category.title}',
                                     maxLines: 1,
@@ -1592,7 +1700,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                         ),
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.surface,
                             borderRadius: BorderRadius.circular(8),
@@ -1627,26 +1738,40 @@ class _DewanPanelViewState extends State<DewanPanelView> {
               ),
               const SizedBox(width: 6),
 
-              _buildLiveTimerBadge(isCompact: isCompact, isVeryNarrow: isVeryNarrow),
+              _buildLiveTimerBadge(
+                isCompact: isCompact,
+                isVeryNarrow: isVeryNarrow,
+              ),
               const SizedBox(width: 6),
 
               if (!isCompact) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: _isFinalized ? AppColors.emeraldSoft : AppColors.blueSoft,
+                    color: _isFinalized
+                        ? AppColors.emeraldSoft
+                        : AppColors.blueSoft,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: _isFinalized ? AppColors.emeraldBorder : AppColors.blueBorder,
+                      color: _isFinalized
+                          ? AppColors.emeraldBorder
+                          : AppColors.blueBorder,
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        _isFinalized ? Icons.check_circle_rounded : Icons.sync_rounded,
+                        _isFinalized
+                            ? Icons.check_circle_rounded
+                            : Icons.sync_rounded,
                         size: 11,
-                        color: _isFinalized ? AppColors.emerald : AppColors.blue,
+                        color: _isFinalized
+                            ? AppColors.emerald
+                            : AppColors.blue,
                       ),
                       const SizedBox(width: 3),
                       Text(
@@ -1654,7 +1779,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                         style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: FontWeight.bold,
-                          color: _isFinalized ? AppColors.emeraldText : AppColors.blueText,
+                          color: _isFinalized
+                              ? AppColors.emeraldText
+                              : AppColors.blueText,
                         ),
                       ),
                     ],
@@ -1719,9 +1846,13 @@ class _DewanPanelViewState extends State<DewanPanelView> {
 
               IconButton(
                 onPressed: _toggleFullScreen,
-                tooltip: _isFullScreen ? 'Keluar Layar Penuh' : 'Layar Penuh Dewan',
+                tooltip: _isFullScreen
+                    ? 'Keluar Layar Penuh'
+                    : 'Layar Penuh Dewan',
                 icon: Icon(
-                  _isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                  _isFullScreen
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.fullscreen_rounded,
                   size: 16,
                   color: AppColors.textPrimary,
                 ),
@@ -1731,7 +1862,9 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                   backgroundColor: AppColors.surfaceMuted,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
+                  ),
                   side: BorderSide(
                     color: _isFullScreen ? AppColors.sky : AppColors.border,
                   ),
@@ -1744,13 +1877,18 @@ class _DewanPanelViewState extends State<DewanPanelView> {
     );
   }
 
-  Widget _buildLiveTimerBadge({required bool isCompact, required bool isVeryNarrow}) {
+  Widget _buildLiveTimerBadge({
+    required bool isCompact,
+    required bool isVeryNarrow,
+  }) {
     final statusColor = _getTimerStatusColor();
     final statusLabel = _getTimerStatusLabel();
     final timeStr = _formatRemainingTime();
 
     return Container(
-      constraints: BoxConstraints(maxWidth: isVeryNarrow ? 78 : (isCompact ? 115 : 185)),
+      constraints: BoxConstraints(
+        maxWidth: isVeryNarrow ? 78 : (isCompact ? 115 : 185),
+      ),
       child: FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.centerRight,
@@ -1787,8 +1925,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                           fontSize: 11.5,
                           fontWeight: FontWeight.w900,
                           fontFamily: 'monospace',
-                          color: _isOvertime ||
-                                  (_timeRemaining <= 10 && _timerStatus == 'running')
+                          color:
+                              _isOvertime ||
+                                  (_timeRemaining <= 10 &&
+                                      _timerStatus == 'running')
                               ? AppColors.primary
                               : AppColors.textPrimary,
                         ),
@@ -1796,7 +1936,10 @@ class _DewanPanelViewState extends State<DewanPanelView> {
                       if (!isVeryNarrow) ...[
                         const SizedBox(width: 4),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: statusColor.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(5),

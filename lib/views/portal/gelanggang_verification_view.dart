@@ -96,10 +96,7 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
   }
 
   String get _currentTargetArena {
-    if (_pinCode.isNotEmpty) {
-      return GelanggangSyncService.normalizeArenaCode(_pinCode);
-    }
-    return GelanggangSyncService.instance.activeArenaCode;
+    return GelanggangSyncService.instance.resolveKnownArenaCode(_pinCode);
   }
 
   void _onKeyPress(String val) {
@@ -260,6 +257,15 @@ class _GelanggangVerificationViewState extends State<GelanggangVerificationView>
         await sync.pullArenaSync(arenaName);
       } catch (_) {}
       if (!mounted) return;
+
+      // Apply event default judge count ONLY if Dewan has not set an authoritative count.
+      final arenaState = sync.getArenaState(arenaName);
+      if (!arenaState.hasDewanJuriCount &&
+          eventJuriCount != null &&
+          eventJuriCount >= 1 &&
+          eventJuriCount <= 10) {
+        arenaState.setActiveJuriCount(eventJuriCount);
+      }
 
       if (_isJuriRole) {
         final available = sync.getAvailableJudgesForThisDevice(arenaCode: arenaName);

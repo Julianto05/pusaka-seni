@@ -37,7 +37,7 @@ class PusakaSeniApiService {
   /// backend responses without relying on live network calls.
   @visibleForTesting
   static Future<GelanggangVerificationResult> Function(String code)?
-      testVerifierOverride;
+  testVerifierOverride;
 
   /// Whether a custom verifier override is currently active.
   static bool get hasVerifierOverride => testVerifierOverride != null;
@@ -56,8 +56,18 @@ class PusakaSeniApiService {
     ).firstMatch(raw.trim());
     if (match == null) return DateTime.tryParse(raw.trim())?.toUtc();
     const months = {
-      'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-      'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+      'Jan': 1,
+      'Feb': 2,
+      'Mar': 3,
+      'Apr': 4,
+      'May': 5,
+      'Jun': 6,
+      'Jul': 7,
+      'Aug': 8,
+      'Sep': 9,
+      'Oct': 10,
+      'Nov': 11,
+      'Dec': 12,
     };
     final month = months[match.group(2)];
     if (month == null) return null;
@@ -105,7 +115,9 @@ class PusakaSeniApiService {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return jsonDecode(response.body);
     }
-    throw Exception('Request failed: ${response.statusCode} - ${response.body}');
+    throw Exception(
+      'Request failed: ${response.statusCode} - ${response.body}',
+    );
   }
 
   /// Extracts athletes scheduled in a specific Gelanggang from Strapi `/jadwals`
@@ -125,8 +137,9 @@ class PusakaSeniApiService {
       final jadwal = Map<String, dynamic>.from(rawJadwal);
 
       // Enforce locked event if the jadwal carries an event relation
-      final jadwalEvent =
-          jadwal['event'] is Map ? jadwal['event'] as Map : null;
+      final jadwalEvent = jadwal['event'] is Map
+          ? jadwal['event'] as Map
+          : null;
       if (jadwalEvent != null) {
         final jEvDoc = jadwalEvent['documentId']?.toString() ?? '';
         final jEvId = jadwalEvent['id']?.toString() ?? '';
@@ -145,8 +158,9 @@ class PusakaSeniApiService {
       }
 
       // Enforce locked gelanggang if the jadwal carries a gelanggang relation
-      final jadwalGel =
-          jadwal['gelanggang'] is Map ? jadwal['gelanggang'] as Map : null;
+      final jadwalGel = jadwal['gelanggang'] is Map
+          ? jadwal['gelanggang'] as Map
+          : null;
       if (jadwalGel != null &&
           lockedGelanggangDocId != null &&
           lockedGelanggangDocId.isNotEmpty) {
@@ -159,7 +173,8 @@ class PusakaSeniApiService {
       final poolMap = jadwal['pool'] is Map ? jadwal['pool'] as Map : null;
       if (poolMap == null) continue;
 
-      final poolName = poolMap['pool_name']?.toString() ??
+      final poolName =
+          poolMap['pool_name']?.toString() ??
           poolMap['nama_pool']?.toString() ??
           'Pool A';
       final poolDocId = poolMap['documentId']?.toString();
@@ -171,7 +186,8 @@ class PusakaSeniApiService {
       for (final rawPeserta in pesertas) {
         if (rawPeserta is! Map) continue;
         final pesertaMap = Map<String, dynamic>.from(rawPeserta);
-        final docId = pesertaMap['documentId']?.toString() ??
+        final docId =
+            pesertaMap['documentId']?.toString() ??
             pesertaMap['id']?.toString() ??
             '';
         final dedupeKey = docId.isNotEmpty
@@ -283,7 +299,7 @@ class PusakaSeniApiService {
     String? eventDocId,
     String? gelanggangDocId,
     String? rawArenaCode,
-    bool fallbackToSample = true,
+    bool fallbackToSample = false,
   }) async {
     final bool hasGelanggangFilter =
         (gelanggangDocId != null && gelanggangDocId.isNotEmpty) ||
@@ -396,6 +412,35 @@ class PusakaSeniApiService {
     return null;
   }
 
+  // Fetch official finalized scores keyed strictly by unique participant identity
+  // (`doc:<documentId>` or `id:<id>`) so scores never bleed across participants
+  // sharing the same pool or `nomor_partai`.
+  Future<Map<String, double>> fetchFinalizedScoresByPeserta() async {
+    final Map<String, double> results = {};
+    try {
+      final json = await _get(
+        '/score-akhirs?populate[peserta]=true&pagination[pageSize]=100&sort=updatedAt:desc',
+      );
+      if (json is Map && json['data'] is List) {
+        for (final raw in (json['data'] as List)) {
+          if (raw is! Map) continue;
+          final peserta = raw['peserta'];
+          final akumulasi = raw['akumulasi'];
+          if (peserta is! Map || akumulasi is! num) continue;
+          final docId = peserta['documentId']?.toString().trim() ?? '';
+          final id = peserta['id']?.toString().trim() ?? '';
+          final score = akumulasi.toDouble();
+          if (docId.isNotEmpty) {
+            results.putIfAbsent('doc:$docId', () => score);
+          } else if (id.isNotEmpty) {
+            results.putIfAbsent('id:$id', () => score);
+          }
+        }
+      }
+    } catch (_) {}
+    return results;
+  }
+
   // Post official Score Akhir (final match summary) to live Strapi API
   Future<bool> postScoreAkhir({
     required String athleteDocId,
@@ -468,12 +513,13 @@ class PusakaSeniApiService {
     }
   }
 
-  /// Fetch all live sync records for a specific canonical arena code.
+  /// Fetch all live sync records (stored as Strapi Drafts so Published scores
+  /// remain clean) for a specific canonical arena code.
   Future<List<Map<String, dynamic>>> fetchSyncRecords(String arenaCode) async {
     try {
       final prefix = Uri.encodeQueryComponent('sync|$arenaCode|');
       final json = await _get(
-        '/scores?filters[penilai][\$startsWith]=$prefix&sort=updatedAt:desc,id:desc&pagination[pageSize]=50',
+        '/scores?status=draft&filters[penilai][\$startsWith]=$prefix&sort=updatedAt:desc,id:desc&pagination[pageSize]=50',
       );
       if (json is Map && json['data'] is List) {
         return (json['data'] as List)
@@ -485,23 +531,31 @@ class PusakaSeniApiService {
     return [];
   }
 
-  /// Upsert a single sync state record keyed by [syncKey] (stored in `penilai`).
+  /// Upsert a single sync state record keyed by [syncKey] (stored in `penilai`)
+  /// as a Strapi **Draft** (`status=draft`) so Published official scores stay
+  /// completely clean. Human-readable text is written to `keterangan`, while
+  /// the compact JSON sync payload is stored in the unused `gerakan_ke` field.
   /// Returns the Strapi `documentId` if successful, or null on failure.
   Future<String?> upsertSyncRecord({
     required String syncKey,
     required double nilai,
     required String waktu,
     required String keterangan,
+    required String syncPayload,
     String? existingDocId,
   }) async {
-    final safeKeterangan =
-        keterangan.length > 255 ? keterangan.substring(0, 255) : keterangan;
+    final safeKeterangan = keterangan.length > 255
+        ? keterangan.substring(0, 255)
+        : keterangan;
+    final safePayload =
+        syncPayload.length > 255 ? syncPayload.substring(0, 255) : syncPayload;
     final payload = jsonEncode({
       'data': {
         'penilai': syncKey,
         'nilai': nilai,
         'waktu': waktu,
         'keterangan': safeKeterangan,
+        'gerakan_ke': safePayload,
       },
     });
 
@@ -510,7 +564,7 @@ class PusakaSeniApiService {
       if (targetDocId == null) {
         final encodedKey = Uri.encodeQueryComponent(syncKey);
         final existing = await _get(
-          '/scores?filters[penilai][\$eq]=$encodedKey&sort=updatedAt:desc,id:desc&pagination[limit]=1',
+          '/scores?status=draft&filters[penilai][\$eq]=$encodedKey&sort=updatedAt:desc,id:desc&pagination[limit]=1',
         );
         if (existing is Map &&
             existing['data'] is List &&
@@ -523,7 +577,7 @@ class PusakaSeniApiService {
       }
 
       if (targetDocId != null && targetDocId.isNotEmpty) {
-        final putUri = Uri.parse('$baseApiUrl/scores/$targetDocId');
+        final putUri = Uri.parse('$baseApiUrl/scores/$targetDocId?status=draft');
         final putRes = await _client
             .put(putUri, headers: _headers(isJson: true), body: payload)
             .timeout(_timeout);
@@ -539,7 +593,7 @@ class PusakaSeniApiService {
         }
       }
 
-      final postUri = Uri.parse('$baseApiUrl/scores');
+      final postUri = Uri.parse('$baseApiUrl/scores?status=draft');
       final postRes = await _client
           .post(postUri, headers: _headers(isJson: true), body: payload)
           .timeout(_timeout);

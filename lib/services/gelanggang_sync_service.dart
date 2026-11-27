@@ -63,25 +63,25 @@ class GelanggangArenaState {
     required this.arenaCode,
     AthleteModel? initialAthlete,
     SeniCategory? initialCategory,
-    this.nomorPartai = 'PARTAI 01',
-    this.pool = 'POOL A',
+    this.nomorPartai = '-',
+    this.pool = '-',
   }) {
-    athlete = initialAthlete ?? AthleteModel.getSampleAthletes()[0];
+    athlete = initialAthlete ?? AthleteModel.empty;
     category = initialCategory ?? SeniCategory.tunggal;
     _initJuriScores();
   }
 
   Map<String, dynamic> _defaultJuriEntry() => {
-        'score': 9.90,
-        'kebenaran': 9.90,
-        'kemantapan': null,
-        'currentJurus': null,
-        'totalJurus': null,
-        'jurusLabel': null,
-        'isReady': false,
-        'status': 'not_ready', // 'not_ready', 'ready', 'scoring', 'submitted'
-        'submitted': false,
-      };
+    'score': 9.90,
+    'kebenaran': 9.90,
+    'kemantapan': null,
+    'currentJurus': null,
+    'totalJurus': null,
+    'jurusLabel': null,
+    'isReady': false,
+    'status': 'not_ready', // 'not_ready', 'ready', 'scoring', 'submitted'
+    'submitted': false,
+  };
 
   void _initJuriScores() {
     juriScores.clear();
@@ -188,7 +188,8 @@ class GelanggangArenaState {
 /// real-time synchronization via the Pusaka Seni backend API so separate
 /// devices running the app stay synchronized automatically.
 class GelanggangSyncService extends ChangeNotifier {
-  static final GelanggangSyncService _instance = GelanggangSyncService._internal();
+  static final GelanggangSyncService _instance =
+      GelanggangSyncService._internal();
   static GelanggangSyncService get instance => _instance;
 
   static const Duration _pollInterval = Duration(milliseconds: 1500);
@@ -236,7 +237,7 @@ class GelanggangSyncService extends ChangeNotifier {
   // Reference-counted polling timers per arena
   final Map<String, int> _syncRefCounts = {};
   final Map<String, Timer> _pollTimers = {};
-  final Set<String> _pullInFlight = {};
+  final Map<String, Future<void>> _pullInFlight = {};
   final Map<String, Timer> _debouncedPushes = {};
 
   String _activeArenaCode = 'GELANGGANG A';
@@ -263,17 +264,12 @@ class GelanggangSyncService extends ChangeNotifier {
   GelanggangArenaState _ensureArenaState(String arenaCode) {
     final normalized = normalizeArenaCode(arenaCode);
     return _arenaStates.putIfAbsent(normalized, () {
-      final samples = AthleteModel.getSampleAthletes();
-      final bool isB = normalized.contains('B') || normalized.contains('2');
-      final defaultAthlete = isB && samples.length > 1 ? samples[1] : samples[0];
-      final defaultCat = isB ? SeniCategory.ganda : SeniCategory.tunggal;
-
       return GelanggangArenaState(
         arenaCode: normalized,
-        initialAthlete: defaultAthlete,
-        initialCategory: defaultCat,
-        nomorPartai: isB ? 'PARTAI 02' : 'PARTAI 01',
-        pool: isB ? 'POOL B' : 'POOL A',
+        initialAthlete: AthleteModel.empty,
+        initialCategory: SeniCategory.tunggal,
+        nomorPartai: '-',
+        pool: '-',
       );
     });
   }
@@ -287,8 +283,36 @@ class GelanggangSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  GelanggangArenaState getArenaState(String arenaCode) => _ensureArenaState(arenaCode);
-  GelanggangArenaState get currentArenaState => _ensureArenaState(_activeArenaCode);
+  GelanggangArenaState getArenaState(String arenaCode) =>
+      _ensureArenaState(arenaCode);
+  GelanggangArenaState get currentArenaState =>
+      _ensureArenaState(_activeArenaCode);
+
+  /// Resolves a raw/partial arena code against already-known arenas in memory
+  /// (matching canonical `arenaCode` or `lockedRawArenaCode`) WITHOUT creating
+  /// phantom arena states with default 8 judges while the user is typing digits.
+  String resolveKnownArenaCode(String rawInput) {
+    final clean = rawInput.trim();
+    if (clean.isEmpty) return _activeArenaCode;
+    final upper = clean.toUpperCase();
+    final normalized = normalizeArenaCode(clean);
+
+    if (_arenaStates.containsKey(normalized)) {
+      return normalized;
+    }
+
+    for (final entry in _arenaStates.entries) {
+      final raw = entry.value.lockedRawArenaCode?.trim().toUpperCase();
+      if (raw != null && raw.isNotEmpty && raw == upper) {
+        return entry.key;
+      }
+      if (entry.key.contains('($upper)')) {
+        return entry.key;
+      }
+    }
+
+    return _activeArenaCode;
+  }
 
   // Active Gelanggang Info
   String get activeArenaCode => _activeArenaCode;
@@ -315,15 +339,19 @@ class GelanggangSyncService extends ChangeNotifier {
   String get timerStatus => currentArenaState.timerStatus;
   String get timerModeTitle => currentArenaState.timerModeTitle;
   bool get isOvertime => currentArenaState.timerRemainingSeconds < 0;
-  int get timerElapsedSeconds =>
-      math.max(0, currentArenaState.targetDurationSeconds - currentArenaState.timerRemainingSeconds);
+  int get timerElapsedSeconds => math.max(
+    0,
+    currentArenaState.targetDurationSeconds -
+        currentArenaState.timerRemainingSeconds,
+  );
 
   String get formattedTimerRemaining {
     final sec = currentArenaState.timerRemainingSeconds;
     final int absSec = sec.abs();
     final int m = absSec ~/ 60;
     final int s = absSec % 60;
-    final formatted = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    final formatted =
+        '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return sec < 0 ? '-$formatted' : formatted;
   }
 
@@ -354,45 +382,117 @@ class GelanggangSyncService extends ChangeNotifier {
   }
 
   int get activeJuriCount => currentArenaState.activeJuriCount;
-  int getActiveJuriCount({String? arenaCode}) => _resolveState(arenaCode).activeJuriCount;
-  Map<int, Map<String, dynamic>> get juriScores => Map.unmodifiable(currentArenaState.juriScores);
-  List<PenaltyDeduction> get penalties => List.unmodifiable(currentArenaState.penalties);
+  int getActiveJuriCount({String? arenaCode}) =>
+      _resolveState(arenaCode).activeJuriCount;
+  Map<int, Map<String, dynamic>> get juriScores =>
+      Map.unmodifiable(currentArenaState.juriScores);
+  List<PenaltyDeduction> get penalties =>
+      List.unmodifiable(currentArenaState.penalties);
   bool get isMatchFinalized => currentArenaState.isMatchFinalized;
   double get officialFinalScore => currentArenaState.officialFinalScore;
 
+  /// Canonical unique identity key for a participant.
+  /// Strictly uses `documentId` -> `id` -> `name|kontingen`.
+  /// NEVER uses `partai` (`nomor_partai`), because multiple participants in the
+  /// same pool/schedule share the same `nomor_partai`.
+  static String athleteIdentityKey(AthleteModel a) {
+    final doc = a.documentId.trim();
+    if (doc.isNotEmpty) return 'doc:$doc';
+    final id = a.id.trim();
+    if (id.isNotEmpty) return 'id:$id';
+    final name = a.name.trim();
+    if (name.isNotEmpty && name != AthleteModel.empty.name) {
+      return 'name:${name.toLowerCase()}|${a.kontingen.trim().toLowerCase()}';
+    }
+    return '';
+  }
+
+  /// Strict identity equality check between two participants.
+  /// Never matches by shared `partai` (`nomor_partai`) so other participants in
+  /// the same pool never inherit active status or finalized scores.
+  static bool isSameAthlete(AthleteModel a, AthleteModel b) {
+    final docA = a.documentId.trim();
+    final docB = b.documentId.trim();
+    if (docA.isNotEmpty && docB.isNotEmpty) {
+      return docA == docB;
+    }
+    if (docA.isNotEmpty || docB.isNotEmpty) {
+      final idA = a.id.trim();
+      final idB = b.id.trim();
+      if (idA.isNotEmpty && idB.isNotEmpty) {
+        return idA == idB;
+      }
+      return false;
+    }
+    final idA = a.id.trim();
+    final idB = b.id.trim();
+    if (idA.isNotEmpty && idB.isNotEmpty) {
+      return idA == idB;
+    }
+    if (idA.isNotEmpty || idB.isNotEmpty) {
+      return false;
+    }
+    final nameA = a.name.trim();
+    final nameB = b.name.trim();
+    if (nameA.isEmpty ||
+        nameB.isEmpty ||
+        nameA == AthleteModel.empty.name ||
+        nameB == AthleteModel.empty.name) {
+      return false;
+    }
+    return nameA.toLowerCase() == nameB.toLowerCase() &&
+        a.kontingen.trim().toLowerCase() == b.kontingen.trim().toLowerCase();
+  }
+
+  /// Merges official finalized scores fetched from backend `/score-akhirs`
+  /// (keyed by `doc:<documentId>` or `id:<id>`) into the arena state.
+  void hydrateFinalizedScores(
+    Map<String, double> scoresByIdentity, {
+    String? arenaCode,
+  }) {
+    if (scoresByIdentity.isEmpty) return;
+    final state = _resolveState(arenaCode);
+    state.finalizedAthletes.addAll(scoresByIdentity);
+    notifyListeners();
+  }
+
   bool isAthleteCompleted(AthleteModel a, {String? arenaCode}) {
-    final finalized = _resolveState(arenaCode).finalizedAthletes;
-    return (a.documentId.isNotEmpty && finalized.containsKey(a.documentId)) ||
-        (a.partai.isNotEmpty && finalized.containsKey(a.partai)) ||
-        (a.id.isNotEmpty && finalized.containsKey(a.id)) ||
-        (a.name.isNotEmpty && finalized.containsKey(a.name));
+    return getAthleteScore(a, arenaCode: arenaCode) != null;
   }
 
   bool isAthleteActive(AthleteModel a, {String? arenaCode}) {
     final state = _resolveState(arenaCode);
     if (state.isMatchFinalized) return false;
-    final bool matchDoc = state.athlete.documentId.isNotEmpty &&
-        a.documentId.isNotEmpty &&
-        state.athlete.documentId == a.documentId;
-    final bool matchPartai = state.athlete.partai.isNotEmpty &&
-        a.partai.isNotEmpty &&
-        state.athlete.partai.toLowerCase().trim() == a.partai.toLowerCase().trim();
-    final bool matchName = state.athlete.name.isNotEmpty &&
-        a.name.isNotEmpty &&
-        state.athlete.name.toLowerCase().trim() == a.name.toLowerCase().trim();
-    return matchDoc || matchPartai || matchName;
+    if (athleteIdentityKey(state.athlete).isEmpty) return false;
+    return isSameAthlete(state.athlete, a);
   }
 
   double? getAthleteScore(AthleteModel a, {String? arenaCode}) {
     final finalized = _resolveState(arenaCode).finalizedAthletes;
-    return finalized[a.documentId] ??
-        finalized[a.partai] ??
-        finalized[a.id] ??
-        finalized[a.name];
+    final doc = a.documentId.trim();
+    if (doc.isNotEmpty) {
+      final byDoc = finalized['doc:$doc'];
+      if (byDoc != null) return byDoc;
+      final id = a.id.trim();
+      if (id.isNotEmpty) {
+        return finalized['id:$id'];
+      }
+      return null;
+    }
+    final id = a.id.trim();
+    if (id.isNotEmpty) {
+      return finalized['id:$id'];
+    }
+    final key = athleteIdentityKey(a);
+    if (key.isEmpty) return null;
+    return finalized[key];
   }
 
   String getJuriStatus(int juriNumber, {String? arenaCode}) {
-    return _resolveState(arenaCode).juriScores[juriNumber]?['status']?.toString() ?? 'not_ready';
+    return _resolveState(
+          arenaCode,
+        ).juriScores[juriNumber]?['status']?.toString() ??
+        'not_ready';
   }
 
   bool isJuriReady(int juriNumber, {String? arenaCode}) =>
@@ -448,11 +548,26 @@ class GelanggangSyncService extends ChangeNotifier {
   }
 
   /// Pulls the latest cloud state for [arenaCode] and merges remote updates.
-  Future<void> pullArenaSync(String arenaCode) async {
-    if (!cloudSyncEnabled) return;
+  /// If a pull for [arenaCode] is already in flight, callers await that same
+  /// in-flight request so authoritative Dewan/Timekeeper state is guaranteed
+  /// to be applied before proceeding.
+  Future<void> pullArenaSync(String arenaCode) {
+    if (!cloudSyncEnabled) return Future.value();
     final targetArena = normalizeArenaCode(arenaCode);
-    if (_pullInFlight.contains(targetArena)) return;
-    _pullInFlight.add(targetArena);
+    final existing = _pullInFlight[targetArena];
+    if (existing != null) return existing;
+
+    final future = _executePullArenaSync(targetArena);
+    _pullInFlight[targetArena] = future;
+    future.whenComplete(() {
+      if (identical(_pullInFlight[targetArena], future)) {
+        _pullInFlight.remove(targetArena);
+      }
+    });
+    return future;
+  }
+
+  Future<void> _executePullArenaSync(String targetArena) async {
     try {
       final api = PusakaSeniApiService();
       final records = await api.fetchSyncRecords(targetArena);
@@ -465,8 +580,6 @@ class GelanggangSyncService extends ChangeNotifier {
       }
     } catch (_) {
       // Offline-resilient: continue operating locally until connection returns
-    } finally {
-      _pullInFlight.remove(targetArena);
     }
   }
 
@@ -476,6 +589,7 @@ class GelanggangSyncService extends ChangeNotifier {
     required String arenaCode,
     required String topic,
     required double nilai,
+    required String label,
     required Map<String, dynamic> payload,
     Duration? debounce,
   }) {
@@ -486,13 +600,14 @@ class GelanggangSyncService extends ChangeNotifier {
 
     if (!cloudSyncEnabled) return;
 
-    final keterangan = jsonEncode(payload);
+    final encodedPayload = jsonEncode(payload);
     Future<void> send() async {
       final docId = await PusakaSeniApiService().upsertSyncRecord(
         syncKey: key,
         nilai: nilai,
         waktu: rev.toString(),
-        keterangan: keterangan,
+        keterangan: label,
+        syncPayload: encodedPayload,
         existingDocId: state.remoteDocIds[key],
       );
       if (docId != null && docId.isNotEmpty) {
@@ -529,7 +644,10 @@ class GelanggangSyncService extends ChangeNotifier {
     };
   }
 
-  Map<String, dynamic> _buildTimerPayload(GelanggangArenaState state, int anchorMs) {
+  Map<String, dynamic> _buildTimerPayload(
+    GelanggangArenaState state,
+    int anchorMs,
+  ) {
     return {
       'st': state.timerStatus,
       'rem': state.timerRemainingSeconds,
@@ -551,14 +669,18 @@ class GelanggangSyncService extends ChangeNotifier {
       'mk': state.matchVersion,
       'st': entry['status']?.toString() ?? 'not_ready',
       'sub': entry['submitted'] == true ? 1 : 0,
-      'kb': double.parse(((entry['kebenaran'] as num?)?.toDouble() ?? 9.90).toStringAsFixed(2)),
+      'kb': double.parse(
+        ((entry['kebenaran'] as num?)?.toDouble() ?? 9.90).toStringAsFixed(2),
+      ),
       'dev': overrideDeviceId ?? (state.claimedJuriDevices[juriNumber] ?? ''),
     };
     if (forceRelease) {
       map['rel'] = 1;
     }
     if (entry['kemantapan'] != null) {
-      map['km'] = double.parse((entry['kemantapan'] as num).toDouble().toStringAsFixed(2));
+      map['km'] = double.parse(
+        (entry['kemantapan'] as num).toDouble().toStringAsFixed(2),
+      );
     }
     if (entry['currentJurus'] != null) {
       map['cj'] = (entry['currentJurus'] as num).toInt();
@@ -574,7 +696,9 @@ class GelanggangSyncService extends ChangeNotifier {
   }
 
   Map<String, dynamic> _buildPenaltiesPayload(GelanggangArenaState state) {
-    final total = double.parse(state.calculateTotalPenalties().toStringAsFixed(2));
+    final total = double.parse(
+      state.calculateTotalPenalties().toStringAsFixed(2),
+    );
     final List<List<dynamic>> items = [];
     for (final p in state.penalties) {
       final candidate = [
@@ -583,18 +707,32 @@ class GelanggangSyncService extends ChangeNotifier {
         double.parse(p.deduction.toStringAsFixed(2)),
       ];
       items.add(candidate);
-      final encoded = jsonEncode({'mk': state.matchVersion, 't': total, 'p': items, 'dev': _deviceId});
+      final encoded = jsonEncode({
+        'mk': state.matchVersion,
+        't': total,
+        'p': items,
+        'dev': _deviceId,
+      });
       if (encoded.length > 245) {
         items.removeLast();
         break;
       }
     }
-    return {
-      'mk': state.matchVersion,
-      't': total,
-      'p': items,
-      'dev': _deviceId,
-    };
+    return {'mk': state.matchVersion, 't': total, 'p': items, 'dev': _deviceId};
+  }
+
+  String _juriStatusIndonesian(String status) {
+    switch (status) {
+      case 'ready':
+        return 'Siap';
+      case 'scoring':
+        return 'Menilai';
+      case 'submitted':
+        return 'Selesai';
+      case 'not_ready':
+      default:
+        return 'Belum Siap';
+    }
   }
 
   void _pushJuriConfigState(String arenaCode) {
@@ -603,19 +741,21 @@ class GelanggangSyncService extends ChangeNotifier {
       arenaCode: arenaCode,
       topic: 'juri_config',
       nilai: state.activeJuriCount.toDouble(),
-      payload: {
-        'jc': state.activeJuriCount,
-        'dev': _deviceId,
-      },
+      label: 'Pengaturan Jumlah Juri (${state.activeJuriCount} Juri)',
+      payload: {'jc': state.activeJuriCount, 'dev': _deviceId},
     );
   }
 
   void _pushMatchState(String arenaCode) {
     final state = _ensureArenaState(arenaCode);
+    final statusPrefix = state.isMatchFinalized
+        ? 'Pengesahan Partai'
+        : 'Partai Aktif';
     _pushSyncKey(
       arenaCode: arenaCode,
       topic: 'match',
       nilai: state.officialFinalScore,
+      label: '$statusPrefix - ${state.athlete.name} (${state.nomorPartai})',
       payload: _buildMatchPayload(state),
     );
   }
@@ -623,10 +763,16 @@ class GelanggangSyncService extends ChangeNotifier {
   void _pushTimerState(String arenaCode) {
     final state = _ensureArenaState(arenaCode);
     final anchorMs = DateTime.now().millisecondsSinceEpoch;
+    final int absSec = state.timerRemainingSeconds.abs();
+    final String mmss =
+        '${(absSec ~/ 60).toString().padLeft(2, '0')}:${(absSec % 60).toString().padLeft(2, '0')}';
+    final String timeText = state.timerRemainingSeconds < 0 ? '-$mmss' : mmss;
     _pushSyncKey(
       arenaCode: arenaCode,
       topic: 'timer',
       nilai: state.timerRemainingSeconds.toDouble(),
+      label:
+          'Timer Pertandingan (${state.timerModeTitle} • ${state.timerStatus.toUpperCase()} $timeText)',
       payload: _buildTimerPayload(state, anchorMs),
     );
   }
@@ -657,11 +803,25 @@ class GelanggangSyncService extends ChangeNotifier {
     Duration? debounce,
   }) {
     final state = _ensureArenaState(arenaCode);
-    final score = (state.juriScores[juriNumber]?['score'] as num?)?.toDouble() ?? 9.90;
+    final entry = state.juriScores[juriNumber] ?? state._defaultJuriEntry();
+    final score = (entry['score'] as num?)?.toDouble() ?? 9.90;
+    final status = entry['status']?.toString() ?? 'not_ready';
+    final currentJurus = entry['currentJurus'];
+    final String label;
+    if (forceRelease) {
+      label = 'Reset Slot Juri $juriNumber (Dewan)';
+    } else if (currentJurus != null && status == 'scoring') {
+      label =
+          'nilai juri - Juri $juriNumber (${_juriStatusIndonesian(status)} • Jurus $currentJurus)';
+    } else {
+      label =
+          'nilai juri - Juri $juriNumber (${_juriStatusIndonesian(status)})';
+    }
     _pushSyncKey(
       arenaCode: arenaCode,
       topic: 'juri|$juriNumber',
       nilai: score,
+      label: label,
       payload: _buildJuriPayload(
         state,
         juriNumber,
@@ -674,10 +834,15 @@ class GelanggangSyncService extends ChangeNotifier {
 
   void _pushPenaltiesState(String arenaCode) {
     final state = _ensureArenaState(arenaCode);
+    final total = state.calculateTotalPenalties();
+    final label = state.penalties.isEmpty
+        ? 'Hukuman Dewan (Tidak Ada)'
+        : 'Hukuman Dewan (Total -${total.toStringAsFixed(2)})';
     _pushSyncKey(
       arenaCode: arenaCode,
       topic: 'penalties',
-      nilai: state.calculateTotalPenalties(),
+      nilai: total,
+      label: label,
       payload: _buildPenaltiesPayload(state),
     );
   }
@@ -716,7 +881,9 @@ class GelanggangSyncService extends ChangeNotifier {
         latestByKey[key] = rec;
       }
       final docId = rec['documentId']?.toString();
-      if (docId != null && docId.isNotEmpty && !state.remoteDocIds.containsKey(key)) {
+      if (docId != null &&
+          docId.isNotEmpty &&
+          !state.remoteDocIds.containsKey(key)) {
         state.remoteDocIds[key] = docId;
       }
     }
@@ -748,9 +915,9 @@ class GelanggangSyncService extends ChangeNotifier {
       final rec = latestByKey[juriConfigKey]!;
       final rev = revByKey[juriConfigKey] ?? 0;
       if (rev > appliedJuriConfigRev) {
-        final data = _decodePayload(rec['keterangan']?.toString());
-        final remoteCount = (data?['jc'] as num?)?.toInt() ??
-            (rec['nilai'] as num?)?.toInt();
+        final data = _decodeSyncRecordPayload(rec);
+        final remoteCount =
+            (data?['jc'] as num?)?.toInt() ?? (rec['nilai'] as num?)?.toInt();
         if (remoteCount != null && remoteCount >= 1 && remoteCount <= 10) {
           state.keyRevisions[juriConfigKey] = rev;
           appliedJuriConfigRev = rev;
@@ -771,11 +938,12 @@ class GelanggangSyncService extends ChangeNotifier {
       final rev = revByKey[matchKey] ?? 0;
       final localRev = state.keyRevisions[matchKey] ?? 0;
       if (rev > localRev) {
-        final data = _decodePayload(rec['keterangan']?.toString());
+        final data = _decodeSyncRecordPayload(rec);
         if (data != null) {
           state.keyRevisions[matchKey] = rev;
           final remoteMk = data['mk']?.toString() ?? '';
-          final isNewMatch = remoteMk.isNotEmpty && remoteMk != state.matchVersion;
+          final isNewMatch =
+              remoteMk.isNotEmpty && remoteMk != state.matchVersion;
 
           final remoteCategoryName = data['c']?.toString() ?? '';
           final remoteCategory = SeniCategory.values.firstWhere(
@@ -793,10 +961,13 @@ class GelanggangSyncService extends ChangeNotifier {
             pool: remotePool,
             partai: remotePartai,
           );
-          final remoteJuriCount = (data['jc'] as num?)?.toInt() ?? state.activeJuriCount;
+          final remoteJuriCount =
+              (data['jc'] as num?)?.toInt() ?? state.activeJuriCount;
           final remoteFinalized = data['fin'] == 1 || data['fin'] == true;
           final remoteFinalScore =
-              (data['fs'] as num?)?.toDouble() ?? (rec['nilai'] as num?)?.toDouble() ?? 0.0;
+              (data['fs'] as num?)?.toDouble() ??
+              (rec['nilai'] as num?)?.toDouble() ??
+              0.0;
 
           // Respect dedicated Dewan juri_config if it is newer than match
           if (rev >= appliedJuriConfigRev) {
@@ -849,7 +1020,7 @@ class GelanggangSyncService extends ChangeNotifier {
       final rev = revByKey[timerKey] ?? 0;
       final localRev = state.keyRevisions[timerKey] ?? 0;
       if (rev > localRev) {
-        final data = _decodePayload(rec['keterangan']?.toString());
+        final data = _decodeSyncRecordPayload(rec);
         if (data != null) {
           state.keyRevisions[timerKey] = rev;
           final remoteDev = data['dev']?.toString() ?? '';
@@ -859,10 +1030,12 @@ class GelanggangSyncService extends ChangeNotifier {
           }
 
           final st = data['st']?.toString() ?? 'standby';
-          final rem = (data['rem'] as num?)?.toInt() ??
+          final rem =
+              (data['rem'] as num?)?.toInt() ??
               (rec['nilai'] as num?)?.toInt() ??
               state.targetDurationSeconds;
-          final dur = (data['dur'] as num?)?.toInt() ?? state.targetDurationSeconds;
+          final dur =
+              (data['dur'] as num?)?.toInt() ?? state.targetDurationSeconds;
           final mt = data['mt']?.toString() ?? state.timerModeTitle;
           final at = (data['at'] as num?)?.toInt() ?? rev;
 
@@ -873,8 +1046,9 @@ class GelanggangSyncService extends ChangeNotifier {
           if (st == 'running') {
             int elapsedSec = 0;
             final updatedAtRaw = rec['updatedAt']?.toString();
-            final remoteServerUpdatedAt =
-                updatedAtRaw != null ? DateTime.tryParse(updatedAtRaw)?.toUtc() : null;
+            final remoteServerUpdatedAt = updatedAtRaw != null
+                ? DateTime.tryParse(updatedAtRaw)?.toUtc()
+                : null;
             if (serverNow != null && remoteServerUpdatedAt != null) {
               // Clock-skew-free delta using Strapi's own server clock
               elapsedSec = math.max(
@@ -907,7 +1081,7 @@ class GelanggangSyncService extends ChangeNotifier {
       final rev = revByKey[penaltiesKey] ?? 0;
       final localRev = state.keyRevisions[penaltiesKey] ?? 0;
       if (rev > localRev) {
-        final data = _decodePayload(rec['keterangan']?.toString());
+        final data = _decodeSyncRecordPayload(rec);
         if (data != null) {
           final remoteMk = data['mk']?.toString() ?? '';
           if (state.matchVersion.isEmpty || remoteMk == state.matchVersion) {
@@ -956,14 +1130,16 @@ class GelanggangSyncService extends ChangeNotifier {
       if (!key.startsWith(juriPrefix)) continue;
 
       final juriNum = int.tryParse(key.substring(juriPrefix.length));
-      if (juriNum == null || juriNum < 1 || juriNum > state.activeJuriCount) continue;
+      if (juriNum == null || juriNum < 1 || juriNum > state.activeJuriCount) {
+        continue;
+      }
 
       final rec = entry.value;
       final rev = revByKey[key] ?? 0;
       final localRev = state.keyRevisions[key] ?? 0;
       if (rev <= localRev) continue;
 
-      final data = _decodePayload(rec['keterangan']?.toString());
+      final data = _decodeSyncRecordPayload(rec);
       if (data == null) continue;
 
       state.keyRevisions[key] = rev;
@@ -1021,6 +1197,15 @@ class GelanggangSyncService extends ChangeNotifier {
     }
   }
 
+  /// Decodes sync payload preferentially from `gerakan_ke` (clean draft sync
+  /// format where `keterangan` stays human-readable), with fallback to
+  /// `keterangan` for backward compatibility with legacy sync records.
+  Map<String, dynamic>? _decodeSyncRecordPayload(Map<String, dynamic> rec) {
+    final fromGerakan = _decodePayload(rec['gerakan_ke']?.toString());
+    if (fromGerakan != null) return fromGerakan;
+    return _decodePayload(rec['keterangan']?.toString());
+  }
+
   Map<String, dynamic>? _decodePayload(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -1032,16 +1217,26 @@ class GelanggangSyncService extends ChangeNotifier {
     return null;
   }
 
-  void _recordFinalizedAthlete(GelanggangArenaState state, double officialScore) {
-    for (final key in [
-      state.athlete.documentId,
-      state.athlete.partai,
-      state.athlete.id,
-      state.athlete.name,
-    ]) {
-      if (key.isNotEmpty) {
-        state.finalizedAthletes[key] = officialScore;
+  void _recordFinalizedAthlete(
+    GelanggangArenaState state,
+    double officialScore,
+  ) {
+    final doc = state.athlete.documentId.trim();
+    final id = state.athlete.id.trim();
+    if (doc.isNotEmpty) {
+      state.finalizedAthletes['doc:$doc'] = officialScore;
+      if (id.isNotEmpty) {
+        state.finalizedAthletes['id:$id'] = officialScore;
       }
+      return;
+    }
+    if (id.isNotEmpty) {
+      state.finalizedAthletes['id:$id'] = officialScore;
+      return;
+    }
+    final fallbackKey = athleteIdentityKey(state.athlete);
+    if (fallbackKey.isNotEmpty) {
+      state.finalizedAthletes[fallbackKey] = officialScore;
     }
   }
 
@@ -1148,8 +1343,9 @@ class GelanggangSyncService extends ChangeNotifier {
     }
     state.timerRemainingSeconds = state.targetDurationSeconds;
     state.timerStatus = 'standby';
-    state.isMatchFinalized = isAthleteCompleted(athlete, arenaCode: targetArena);
-    state.officialFinalScore = state.finalizedAthletes[athlete.documentId] ?? 0.0;
+    final existingScore = getAthleteScore(athlete, arenaCode: targetArena);
+    state.isMatchFinalized = existingScore != null;
+    state.officialFinalScore = existingScore ?? 0.0;
     state.penalties.clear();
 
     // Reset juri scores and ongoing sessions ONLY for this arena
@@ -1166,9 +1362,11 @@ class GelanggangSyncService extends ChangeNotifier {
       try {
         PusakaSeniApiService().postScore(
           athleteDocId: athlete.documentId,
+          poolDocId: athlete.poolDocId,
           penilai: 'dewan',
           nilai: 9.90,
-          keterangan: 'Partai Dimulai oleh Dewan (${athlete.partai}) di $targetArena',
+          keterangan:
+              'Partai Dimulai oleh Dewan (${athlete.partai}) di $targetArena',
         );
       } catch (_) {}
     }
@@ -1235,20 +1433,25 @@ class GelanggangSyncService extends ChangeNotifier {
       arenaCode: targetArena,
       topic: 'claims_reset',
       nilai: 0,
+      label: 'Reset Semua Slot Juri (Dewan)',
       payload: {'dev': _deviceId},
     );
     _emitSync('JURI_CLAIMS_CLEARED', targetArena);
   }
 
   /// Ambil daftar nomor juri yang tersedia untuk perangkat ini
-  List<int> getAvailableJudgesForThisDevice({String? arenaCode, String? customDeviceId}) {
+  List<int> getAvailableJudgesForThisDevice({
+    String? arenaCode,
+    String? customDeviceId,
+  }) {
     final targetArena = normalizeArenaCode(arenaCode ?? _activeArenaCode);
     final state = _ensureArenaState(targetArena);
     final devId = customDeviceId ?? _deviceId;
     final int count = state.activeJuriCount > 0 ? state.activeJuriCount : 8;
-    return List.generate(count, (i) => i + 1)
-        .where((jNum) => !state.isJuriClaimedByOther(jNum, devId))
-        .toList();
+    return List.generate(
+      count,
+      (i) => i + 1,
+    ).where((jNum) => !state.isJuriClaimedByOther(jNum, devId)).toList();
   }
 
   /// Simpan sesi penilaian juri yang sedang berjalan agar tidak hilang jika keluar sementara
@@ -1261,7 +1464,10 @@ class GelanggangSyncService extends ChangeNotifier {
   }
 
   /// Ambil sesi penilaian juri yang sedang berjalan untuk dilanjutkan
-  Map<String, dynamic>? getJuriOngoingSession(int juriNumber, {String? arenaCode}) {
+  Map<String, dynamic>? getJuriOngoingSession(
+    int juriNumber, {
+    String? arenaCode,
+  }) {
     return _resolveState(arenaCode).juriOngoingSessions[juriNumber];
   }
 
@@ -1527,7 +1733,10 @@ class GelanggangSyncService extends ChangeNotifier {
         final s = (state.juriScores[i]?['score'] as num?)?.toDouble() ?? 9.90;
         nilaiJuriMap['juri $i'] = double.parse(s.toStringAsFixed(2));
       }
-      final int elapsed = math.max(0, state.targetDurationSeconds - state.timerRemainingSeconds);
+      final int elapsed = math.max(
+        0,
+        state.targetDurationSeconds - state.timerRemainingSeconds,
+      );
       final String akurasiWaktu =
           '${(elapsed ~/ 60).toString().padLeft(2, '0')}:${(elapsed % 60).toString().padLeft(2, '0')}';
       unawaited(
